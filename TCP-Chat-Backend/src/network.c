@@ -8,7 +8,7 @@ int connectToServer(const char* serverIP, int port){
 
     new_sockfd = socket(AF_INET, SOCK_STREAM, 0);
     if(new_sockfd < 0){
-        error("(-)| Error opening socket");
+        perror("(-)| Error opening socket");
         return -1;
     }
 
@@ -17,13 +17,13 @@ int connectToServer(const char* serverIP, int port){
     server_addr.sin_port = htons(port);
 
     if(inet_pton(AF_INET, serverIP, &server_addr.sin_addr) <= 0){
-        error("(-)| Invalid address | Address not supported.\n");
+        fprintf(stderr, "(-)| Invalid IPv4 address: %s\n", serverIP);
         close(new_sockfd);
         return -1;
     }
 
     if(connect(new_sockfd, (SA*)&server_addr, sizeof(server_addr)) < 0){
-        error("(-)| Error connecting to server");
+        perror("(-)| Error connecting to server");
         close(new_sockfd);
         return -1;
     }
