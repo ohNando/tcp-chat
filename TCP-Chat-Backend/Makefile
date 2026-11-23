@@ -14,6 +14,7 @@ CLIENT_BIN = $(BIN_DIR)/client
 
 # ----- Objects -----
 COMMON_OBJ = $(OBJ_DIR)/utility.o $(OBJ_DIR)/network.o
+PROTO_OBJ  = $(OBJ_DIR)/bytebuf.o
 SERVER_OBJ = $(OBJ_DIR)/server.o $(OBJ_DIR)/gui_bridge.o $(OBJ_DIR)/queue.o $(COMMON_OBJ)
 CLIENT_OBJ = $(OBJ_DIR)/client.o $(COMMON_OBJ)
 DEPS       = $(wildcard $(OBJ_DIR)/*.d $(TEST_BIN_DIR)/*.d)
@@ -22,7 +23,7 @@ DEPS       = $(wildcard $(OBJ_DIR)/*.d $(TEST_BIN_DIR)/*.d)
 # Modules without a main(), linked into every test binary.
 TEST_DIR     = tests
 TEST_BIN_DIR = $(TEST_DIR)/bin
-MODULE_OBJ   = $(OBJ_DIR)/queue.o $(COMMON_OBJ)
+MODULE_OBJ   = $(OBJ_DIR)/queue.o $(COMMON_OBJ) $(PROTO_OBJ)
 TEST_SRC     = $(wildcard $(TEST_DIR)/test_*.c)
 TEST_BINS    = $(patsubst $(TEST_DIR)/%.c,$(TEST_BIN_DIR)/%,$(TEST_SRC))
 
