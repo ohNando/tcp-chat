@@ -87,12 +87,64 @@ void App::drawConnectScreen() {
 }
 
 void App::drawChatScreen() {
+    const float input_h = ImGui::GetFrameHeightWithSpacing() + 6.0f;
+    drawMessages(ImGui::GetContentRegionAvail().y - input_h);
+    drawInput();
+}
+
+void App::drawMessages(float height) {
+    ImGui::BeginChild("messages", ImVec2(0, height), ImGuiChildFlags_Borders);
+    ImGui::PushTextWrapPos(0.0f); // wrap at the child's right edge
+
     for (const ChatLine& l : client_.lines()) {
-        if (l.kind == ChatLine::Chat)
-            ImGui::Text("%s: %s", l.name.c_str(), l.text.c_str());
-        else
-            ImGui::TextUnformatted(l.text.c_str());
+        switch (l.kind) {
+            case ChatLine::Chat:
+                // "%s" keeps user text out of the format string.
+                ImGui::TextWrapped("%s: %s", l.name.c_str(), l.text.c_str());
+                break;
+            case ChatLine::System:
+                ImGui::TextDisabled("%s", l.text.c_str());
+                break;
+            case ChatLine::Error:
+                ImGui::TextColored(ImVec4(1.0f, 0.45f, 0.45f, 1.0f), "%s", l.text.c_str());
+                break;
+        }
     }
+
+    ImGui::PopTextWrapPos();
+    ImGui::EndChild();
+}
+
+void App::drawInput() {
+    const float button_w = 90.0f;
+    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - button_w - ImGui::GetStyle().ItemSpacing.x);
+    if (focus_input_) {
+        ImGui::SetKeyboardFocusHere();
+        focus_input_ = false;
+    }
+    bool enter = ImGui::InputTextWithHint("##input", "Type a message, /users or /quit",
+                                          input_, sizeof(input_),
+                                          ImGuiInputTextFlags_EnterReturnsTrue);
+    ImGui::SameLine();
+    if (ImGui::Button("Send", ImVec2(button_w, 0)) || enter) submitInput();
+}
+
+void App::submitInput() {
+    std::string text = input_;
+    // Trim surrounding whitespace.
+    size_t b = text.find_first_not_of(" \t");
+    size_t e = text.find_last_not_of(" \t");
+    text = b == std::string::npos ? "" : text.substr(b, e - b + 1);
+    focus_input_ = true; // Enter takes focus away from the field; give it back
+
+    if (text.empty()) return;
+    if (text == "/quit" || text == "/exit")
+        client_.quit();
+    else if (text == "/users")
+        client_.requestUsers();
+    else if (!client_.sendText(text))
+        return; // keep the text so the user can fix it
+    input_[0] = '\0';
 }
 
 static void fingerprint_text(const std::string& fp) {

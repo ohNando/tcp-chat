@@ -25,6 +25,9 @@ public:
 private:
     void drawConnectScreen();
     void drawChatScreen();
+    void drawMessages(float height);
+    void drawInput();
+    void submitInput();
     void drawTrustPrompt();
     void drawIdentityWarning();
     void startConnect();
@@ -36,4 +39,6 @@ private:
     char host_[256] = "127.0.0.1";
     int port_ = 8080;
     char name_[NAME_MAX_LEN + 1] = "";
+    char input_[TEXT_MAX_LEN + 1] = "";
+    bool focus_input_ = true;
 };
