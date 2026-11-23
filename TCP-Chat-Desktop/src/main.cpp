@@ -61,18 +61,18 @@ static bool save_ppm(const char* path, int w, int h) {
 static void usage(const char* prog) {
     std::fprintf(stderr,
                  "Usage: %s [--connect host port name] [--say text] [--trust]\n"
-                 "          [--screenshot out.ppm --frames N]\n"
+                 "          [--screenshot out.ppm --wait seconds]\n"
                  "  --connect     connect on start-up\n"
                  "  --say         send a message once joined\n"
                  "  --trust       accept an unknown server key without asking\n"
-                 "  --screenshot  render N frames in a hidden window, save, exit\n",
+                 "  --screenshot  render in a hidden window for --wait seconds, save, exit\n",
                  prog);
 }
 
 int main(int argc, char** argv) {
     AutoRun autorun;
     const char* screenshot = nullptr;
-    int frames = 60;
+    double wait = 1.0;
 
     for (int i = 1; i < argc; i++) {
         if (!std::strcmp(argv[i], "--connect") && i + 3 < argc) {
@@ -86,8 +86,8 @@ int main(int argc, char** argv) {
             autorun.trust = true;
         } else if (!std::strcmp(argv[i], "--screenshot") && i + 1 < argc) {
             screenshot = argv[++i];
-        } else if (!std::strcmp(argv[i], "--frames") && i + 1 < argc) {
-            frames = std::atoi(argv[++i]);
+        } else if (!std::strcmp(argv[i], "--wait") && i + 1 < argc) {
+            wait = std::atof(argv[++i]);
         } else {
             usage(argv[0]);
             return 2;
@@ -126,7 +126,8 @@ int main(int argc, char** argv) {
     ImGui_ImplOpenGL3_Init("#version 330");
 
     App app(autorun);
-    int frame = 0;
+    // Time based: a hidden window may not be throttled by vsync.
+    const double screenshot_at = glfwGetTime() + wait;
 
     while (!glfwWindowShouldClose(window)) {
         glfwPollEvents();
@@ -145,7 +146,7 @@ int main(int argc, char** argv) {
         glClear(GL_COLOR_BUFFER_BIT);
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
-        if (screenshot && ++frame >= frames) {
+        if (screenshot && glfwGetTime() >= screenshot_at) {
             int rc = save_ppm(screenshot, w, h) ? 0 : 1;
             glfwSetWindowShouldClose(window, GLFW_TRUE);
             if (rc) std::fprintf(stderr, "cannot write %s\n", screenshot);
