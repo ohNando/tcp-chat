@@ -114,6 +114,26 @@ TEST(buffer_compacts_to_fit_max_record) {
     framer_free(&f);
 }
 
+TEST(peek_and_consume_raw_bytes) {
+    framer_t f;
+    size_t len;
+    framer_init(&f, 32);
+    framer_feed(&f, "GET / HTTP", 10);
+
+    uint8_t* p = framer_peek(&f, &len);
+    CHECK_EQ_INT(len, 10);
+    CHECK_EQ_MEM(p, "GET / HTTP", 10);
+
+    framer_consume(&f, 4);
+    p = framer_peek(&f, &len);
+    CHECK_EQ_INT(len, 6);
+    CHECK_EQ_MEM(p, "/ HTTP", 6);
+
+    framer_consume(&f, 100); /* clamps */
+    CHECK_EQ_INT(framer_pending(&f), 0);
+    framer_free(&f);
+}
+
 int main(void) {
     RUN(single_complete_record);
     RUN(record_split_byte_by_byte);
@@ -121,5 +141,6 @@ int main(void) {
     RUN(record_followed_by_partial_record);
     RUN(oversized_record_is_rejected);
     RUN(buffer_compacts_to_fit_max_record);
+    RUN(peek_and_consume_raw_bytes);
     return TEST_REPORT();
 }

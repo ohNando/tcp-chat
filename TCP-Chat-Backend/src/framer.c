@@ -64,6 +64,16 @@ int framer_next(framer_t* f, const uint8_t** body, size_t* len) {
     return 1;
 }
 
+uint8_t* framer_peek(framer_t* f, size_t* len) {
+    *len = f->end - f->start;
+    return f->buf + f->start;
+}
+
+void framer_consume(framer_t* f, size_t n) {
+    size_t pending = f->end - f->start;
+    f->start += n > pending ? pending : n;
+}
+
 size_t framer_pending(const framer_t* f) {
     return f->end - f->start;
 }

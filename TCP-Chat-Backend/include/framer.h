@@ -48,6 +48,11 @@ size_t framer_feed(framer_t* f, const void* data, size_t n);
  * 0: need more bytes, -1: declared length exceeds max_body. */
 int framer_next(framer_t* f, const uint8_t** body, size_t* len);
 
+/* Raw access for protocols with their own framing (HTTP, WebSocket):
+ * peek at all buffered bytes, then consume what was parsed. */
+uint8_t* framer_peek(framer_t* f, size_t* len);
+void framer_consume(framer_t* f, size_t n);
+
 /* Bytes buffered but not yet returned as records. */
 size_t framer_pending(const framer_t* f);
 
