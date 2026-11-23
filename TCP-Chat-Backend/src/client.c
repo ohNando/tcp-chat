@@ -7,6 +7,7 @@
 
 #include <poll.h>
 #include <stdarg.h>
+#include <time.h>
 
 static int sockfd = -1;
 static framer_t in;
@@ -19,6 +20,17 @@ static char line_buf[CLIENT_LINE_MAX];
 static size_t line_len = 0;
 static int line_overflow = 0;
 static int stdin_eof = 0;
+
+static char my_name[NAME_MAX_LEN + 1];
+static int use_color = 0;
+
+/* ANSI colors, only used when stdout is a terminal. */
+#define C_RESET  (use_color ? "\033[0m"  : "")
+#define C_DIM    (use_color ? "\033[2m"  : "")
+#define C_SELF   (use_color ? "\033[1;32m" : "")
+#define C_OTHER  (use_color ? "\033[1;36m" : "")
+#define C_INFO   (use_color ? "\033[33m" : "")
+#define C_ERROR  (use_color ? "\033[1;31m" : "")
 
 /* ---------------------------------------------------------------- */
 /* Output                                                            */
@@ -86,16 +98,24 @@ static void handle_server_message(message_t* m) {
     switch (m->type) {
         case FT_WELCOME:
             state = CLIENT_CHATTING;
-            show("* %s", m->text);
+            show("%s* %s%s", C_INFO, m->text, C_RESET);
             break;
-        case FT_CHAT:
-            show("%s: %s", m->name, m->text);
+        case FT_CHAT: {
+            char stamp[8];
+            time_t t = (time_t)(m->timestamp / 1000);
+            struct tm tm;
+            localtime_r(&t, &tm);
+            strftime(stamp, sizeof(stamp), "%H:%M", &tm);
+            int self = strcmp(m->name, my_name) == 0;
+            show("%s[%s]%s %s%s%s: %s", C_DIM, stamp, C_RESET,
+                 self ? C_SELF : C_OTHER, m->name, C_RESET, m->text);
             break;
+        }
         case FT_JOIN:
-            show("* %s joined", m->name);
+            show("%s* %s joined the chat%s", C_INFO, m->name, C_RESET);
             break;
         case FT_LEAVE:
-            show("* %s left", m->name);
+            show("%s* %s left the chat%s", C_INFO, m->name, C_RESET);
             break;
         case FT_USERS: {
             char list[USERS_MAX * (NAME_MAX_LEN + 2)] = "";
@@ -103,12 +123,12 @@ static void handle_server_message(message_t* m) {
                 if (i) strcat(list, ", ");
                 strcat(list, m->users[i]);
             }
-            show("* online (%u): %s", m->user_count, list);
+            show("%s* online (%u): %s%s", C_INFO, m->user_count, list, C_RESET);
             break;
         }
         case FT_ERR:
             if (state == CLIENT_REGISTERING) state = CLIENT_NAMING;
-            show("! %s", m->text);
+            show("%s! %s%s", C_ERROR, m->text, C_RESET);
             break;
         default:
             break;
@@ -171,6 +191,7 @@ static int handle_line(const char* line) {
         }
         message_init(&m, FT_NAME);
         strcpy(m.name, line);
+        strcpy(my_name, line);
         state = CLIENT_REGISTERING;
         return send_message(&m);
     }
@@ -252,6 +273,8 @@ static int handle_stdin(void) {
 int main(int argc, char** argv) {
     const char* host = argc > 1 ? argv[1] : CLIENT_DEFAULT_HOST;
     int port = argc > 2 ? atoi(argv[2]) : CLIENT_DEFAULT_PORT;
+
+    use_color = isatty(STDOUT_FILENO);
 
     sockfd = connectToServer(host, port);
     if (sockfd < 0) return 1;
