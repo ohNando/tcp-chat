@@ -5,6 +5,7 @@
 #include "utility.h"
 #include "validate.h"
 
+#include <signal.h>
 #include <sys/epoll.h>
 #include <time.h>
 
@@ -301,6 +302,10 @@ static void run(void) {
 
 int main(int argc, char** argv) {
     int port = argc > 1 ? atoi(argv[1]) : SERVER_DEFAULT_PORT;
+
+    /* conn_flush() already uses MSG_NOSIGNAL; ignoring SIGPIPE as well
+     * protects any other write path from killing the process. */
+    signal(SIGPIPE, SIG_IGN);
 
     if (room_init(&room, SERVER_DEFAULT_MAX_CLIENTS) < 0) {
         fprintf(stderr, "out of memory\n");
