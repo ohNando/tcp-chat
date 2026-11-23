@@ -1,6 +1,7 @@
 #define _GNU_SOURCE /* accept4 */
 
 #include "server.h"
+#include "identity.h"
 #include "network.h"
 #include "utility.h"
 #include "validate.h"
@@ -17,6 +18,7 @@ static int epfd = -1;
 static source_t listener = { SRC_LISTENER, -1 };
 static source_t sigsrc = { SRC_SIGNAL, -1 };
 static int running = 1;
+static identity_t identity;
 static room_t room;
 static int next_conn_id = 1;
 
@@ -347,10 +349,12 @@ static void run(void) {
 
 static void usage(const char* prog) {
     fprintf(stderr,
-            "Usage: %s [-p port] [-m max_clients]\n"
+            "Usage: %s [-p port] [-m max_clients] [-k key_file]\n"
             "  -p  TCP port to listen on (default %d)\n"
-            "  -m  maximum simultaneous clients, 1-%d (default %d)\n",
-            prog, SERVER_DEFAULT_PORT, USERS_MAX, SERVER_DEFAULT_MAX_CLIENTS);
+            "  -m  maximum simultaneous clients, 1-%d (default %d)\n"
+            "  -k  server identity key, created if missing (default %s)\n",
+            prog, SERVER_DEFAULT_PORT, USERS_MAX, SERVER_DEFAULT_MAX_CLIENTS,
+            IDENTITY_DEFAULT_PATH);
 }
 
 /* Parses a decimal integer in [min, max]; returns -1 if invalid. */
@@ -365,9 +369,10 @@ static long parse_int(const char* s, long min, long max) {
 int main(int argc, char** argv) {
     int port = SERVER_DEFAULT_PORT;
     int max_clients = SERVER_DEFAULT_MAX_CLIENTS;
+    const char* key_path = IDENTITY_DEFAULT_PATH;
     int opt;
 
-    while ((opt = getopt(argc, argv, "p:m:h")) != -1) {
+    while ((opt = getopt(argc, argv, "p:m:k:h")) != -1) {
         long v;
         switch (opt) {
             case 'p':
@@ -385,6 +390,9 @@ int main(int argc, char** argv) {
                 }
                 max_clients = (int)v;
                 break;
+            case 'k':
+                key_path = optarg;
+                break;
             default:
                 usage(argv[0]);
                 return opt == 'h' ? 0 : 1;
@@ -399,6 +407,10 @@ int main(int argc, char** argv) {
         fprintf(stderr, "libsodium initialization failed\n");
         return 1;
     }
+
+    int created;
+    if (identity_load_or_create(&identity, key_path, &created) < 0) return 1;
+    if (created) log_info("generated new identity key in %s", key_path);
 
     if (room_init(&room, (size_t)max_clients) < 0) {
         fprintf(stderr, "out of memory\n");
@@ -435,5 +447,6 @@ int main(int argc, char** argv) {
     close(epfd);
     close(listener.fd);
     room_free(&room);
+    identity_wipe(&identity);
     return 0;
 }

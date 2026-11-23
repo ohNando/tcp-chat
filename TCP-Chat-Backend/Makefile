@@ -19,15 +19,16 @@ CLIENT_BIN = $(BIN_DIR)/client
 COMMON_OBJ = $(OBJ_DIR)/utility.o $(OBJ_DIR)/network.o
 PROTO_OBJ  = $(OBJ_DIR)/bytebuf.o $(OBJ_DIR)/frame.o $(OBJ_DIR)/framer.o $(OBJ_DIR)/message.o $(OBJ_DIR)/validate.o
 CORE_OBJ   = $(OBJ_DIR)/conn.o $(OBJ_DIR)/room.o
-SERVER_OBJ = $(OBJ_DIR)/server.o $(COMMON_OBJ) $(PROTO_OBJ) $(CORE_OBJ)
-CLIENT_OBJ = $(OBJ_DIR)/client.o $(COMMON_OBJ) $(PROTO_OBJ)
+CRYPTO_OBJ = $(OBJ_DIR)/identity.o
+SERVER_OBJ = $(OBJ_DIR)/server.o $(COMMON_OBJ) $(PROTO_OBJ) $(CORE_OBJ) $(CRYPTO_OBJ)
+CLIENT_OBJ = $(OBJ_DIR)/client.o $(COMMON_OBJ) $(PROTO_OBJ) $(CRYPTO_OBJ)
 DEPS       = $(wildcard $(OBJ_DIR)/*.d $(TEST_BIN_DIR)/*.d)
 
 # ----- Tests -----
 # Modules without a main(), linked into every test binary.
 TEST_DIR     = tests
 TEST_BIN_DIR = $(TEST_DIR)/bin
-MODULE_OBJ   = $(COMMON_OBJ) $(PROTO_OBJ) $(CORE_OBJ)
+MODULE_OBJ   = $(COMMON_OBJ) $(PROTO_OBJ) $(CORE_OBJ) $(CRYPTO_OBJ)
 TEST_SRC     = $(wildcard $(TEST_DIR)/test_*.c)
 TEST_BINS    = $(patsubst $(TEST_DIR)/%.c,$(TEST_BIN_DIR)/%,$(TEST_SRC))
 
