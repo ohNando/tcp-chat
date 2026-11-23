@@ -24,7 +24,7 @@ DEPS       = $(wildcard $(OBJ_DIR)/*.d $(TEST_BIN_DIR)/*.d)
 # Modules without a main(), linked into every test binary.
 TEST_DIR     = tests
 TEST_BIN_DIR = $(TEST_DIR)/bin
-MODULE_OBJ   = $(OBJ_DIR)/queue.o $(COMMON_OBJ) $(PROTO_OBJ) $(CORE_OBJ)
+MODULE_OBJ   = $(COMMON_OBJ) $(PROTO_OBJ) $(CORE_OBJ)
 TEST_SRC     = $(wildcard $(TEST_DIR)/test_*.c)
 TEST_BINS    = $(patsubst $(TEST_DIR)/%.c,$(TEST_BIN_DIR)/%,$(TEST_SRC))
 
