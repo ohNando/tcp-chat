@@ -28,6 +28,8 @@ private:
     void drawMessages(float height);
     void drawInput();
     void drawUsers(float height);
+    void drawStatusBar();
+    void leave();
     void submitInput();
     void drawTrustPrompt();
     void drawIdentityWarning();
@@ -36,6 +38,12 @@ private:
     ChatClient client_;
     AutoRun autorun_;
     bool said_ = false;
+
+    // Set once we got into the room; while set, a dropped connection is
+    // retried with exponential backoff instead of going back to login.
+    bool joined_ = false;
+    int reconnect_attempt_ = 0;
+    double reconnect_at_ = 0;
 
     char host_[256] = "127.0.0.1";
     int port_ = 8080;

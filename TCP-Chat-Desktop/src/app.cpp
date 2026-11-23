@@ -2,9 +2,35 @@
 
 #include <cstdio>
 #include <algorithm>
+#include <chrono>
+#include <cmath>
 #include <cstring>
 
 #include "imgui.h"
+
+static double now_s() {
+    using namespace std::chrono;
+    return duration<double>(steady_clock::now().time_since_epoch()).count();
+}
+
+static const char* state_text(ConnState s) {
+    switch (s) {
+        case ConnState::Disconnected: return "Disconnected";
+        case ConnState::Connecting:   return "Connecting...";
+        case ConnState::Handshaking:  return "Securing connection...";
+        case ConnState::Registering:  return "Joining...";
+        case ConnState::Chatting:     return "Online";
+    }
+    return "";
+}
+
+static ImVec4 state_color(ConnState s) {
+    switch (s) {
+        case ConnState::Chatting:     return ImVec4(0.35f, 0.85f, 0.45f, 1.0f);
+        case ConnState::Disconnected: return ImVec4(1.0f, 0.45f, 0.45f, 1.0f);
+        default:                      return ImVec4(1.0f, 0.75f, 0.3f, 1.0f);
+    }
+}
 
 App::App(const AutoRun& autorun) : autorun_(autorun) {
     if (autorun_.connect) {
@@ -22,6 +48,25 @@ void App::startConnect() {
 void App::poll() {
     client_.poll();
 
+    if (client_.state() == ConnState::Chatting) {
+        joined_ = true;
+        reconnect_attempt_ = 0;
+        reconnect_at_ = 0;
+    }
+
+    // Lost the connection while in the room: retry 1s, 2s, 4s ... 15s.
+    bool blocked = client_.trustPending() || client_.identityChanged();
+    if (joined_ && client_.state() == ConnState::Disconnected && !blocked) {
+        if (reconnect_at_ == 0) {
+            double delay = std::min(15.0, std::pow(2.0, reconnect_attempt_));
+            reconnect_at_ = now_s() + delay;
+            reconnect_attempt_++;
+        } else if (now_s() >= reconnect_at_) {
+            reconnect_at_ = 0;
+            startConnect();
+        }
+    }
+
     if (autorun_.trust && client_.trustPending()) client_.acceptPendingKey();
     if (!said_ && !autorun_.say.empty() && client_.state() == ConnState::Chatting) {
         client_.sendText(autorun_.say);
@@ -38,7 +83,7 @@ void App::draw() {
                  ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove |
                  ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoBringToFrontOnFocus);
 
-    bool inRoom = client_.state() == ConnState::Chatting;
+    bool inRoom = joined_;
     if (inRoom)
         drawChatScreen();
     else
@@ -87,7 +132,33 @@ void App::drawConnectScreen() {
     ImGui::EndGroup();
 }
 
+void App::leave() {
+    client_.quit();
+    joined_ = false;
+    reconnect_at_ = 0;
+    reconnect_attempt_ = 0;
+}
+
+void App::drawStatusBar() {
+    ImGui::TextUnformatted("TCP Chat");
+    ImGui::SameLine();
+    ImGui::TextDisabled("|  %s @ %s:%d  |", client_.name().c_str(), client_.host().c_str(), client_.port());
+    ImGui::SameLine();
+    ConnState s = client_.state();
+    ImGui::TextColored(state_color(s), "%s", state_text(s));
+    if (s == ConnState::Disconnected && reconnect_at_ > 0) {
+        ImGui::SameLine();
+        ImGui::TextDisabled("(retrying in %.0fs)", std::ceil(std::max(0.0, reconnect_at_ - now_s())));
+    }
+
+    const float button_w = 90.0f;
+    ImGui::SameLine(ImGui::GetContentRegionMax().x - button_w);
+    if (ImGui::Button("Leave", ImVec2(button_w, 0))) leave();
+    ImGui::Separator();
+}
+
 void App::drawChatScreen() {
+    drawStatusBar();
     const float users_w = 200.0f;
     const float input_h = ImGui::GetFrameHeightWithSpacing() + 6.0f;
     const float body_h = ImGui::GetContentRegionAvail().y - input_h;
@@ -153,11 +224,13 @@ void App::drawInput() {
         ImGui::SetKeyboardFocusHere();
         focus_input_ = false;
     }
+    ImGui::BeginDisabled(client_.state() != ConnState::Chatting);
     bool enter = ImGui::InputTextWithHint("##input", "Type a message, /users or /quit",
                                           input_, sizeof(input_),
                                           ImGuiInputTextFlags_EnterReturnsTrue);
     ImGui::SameLine();
     if (ImGui::Button("Send", ImVec2(button_w, 0)) || enter) submitInput();
+    ImGui::EndDisabled();
 }
 
 void App::submitInput() {
@@ -170,7 +243,7 @@ void App::submitInput() {
 
     if (text.empty()) return;
     if (text == "/quit" || text == "/exit")
-        client_.quit();
+        leave();
     else if (text == "/users")
         client_.requestUsers();
     else if (!client_.sendText(text))
