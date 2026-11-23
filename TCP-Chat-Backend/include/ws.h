@@ -63,6 +63,13 @@ typedef struct {
  * than max_payload). */
 int ws_parse_frame(uint8_t* buf, size_t len, size_t max_payload, ws_frame_t* f);
 
+/* Writes the header of an unfragmented server frame (FIN set, no mask)
+ * into out and returns its length: 2, 4 or 10 bytes. */
+size_t ws_frame_header(uint8_t out[WS_MAX_HEADER_SIZE], int opcode, size_t payload_len);
+
+/* Builds a complete close frame with a status code. Returns its length. */
+size_t ws_close_frame(uint8_t out[4], uint16_t code);
+
 /* Computes Sec-WebSocket-Accept for a client key. The key must be the
  * base64 encoding of exactly 16 bytes. Returns 0 or -1. */
 int ws_accept_key(const char* client_key, char out[WS_ACCEPT_SIZE]);

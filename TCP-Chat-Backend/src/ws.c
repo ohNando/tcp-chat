@@ -105,3 +105,29 @@ int ws_parse_frame(uint8_t* buf, size_t len, size_t max_payload, ws_frame_t* f) 
     f->len = (size_t)plen;
     return (int)(pos + plen);
 }
+
+size_t ws_frame_header(uint8_t out[WS_MAX_HEADER_SIZE], int opcode, size_t payload_len) {
+    out[0] = (uint8_t)(0x80 | (opcode & 0x0F));
+    if (payload_len < 126) {
+        out[1] = (uint8_t)payload_len;
+        return 2;
+    }
+    if (payload_len <= 0xFFFF) {
+        out[1] = 126;
+        out[2] = (uint8_t)(payload_len >> 8);
+        out[3] = (uint8_t)payload_len;
+        return 4;
+    }
+    out[1] = 127;
+    uint64_t v = payload_len;
+    for (int i = 0; i < 8; i++) out[2 + i] = (uint8_t)(v >> (56 - 8 * i));
+    return 10;
+}
+
+size_t ws_close_frame(uint8_t out[4], uint16_t code) {
+    out[0] = 0x80 | WS_OP_CLOSE;
+    out[1] = 2;
+    out[2] = (uint8_t)(code >> 8);
+    out[3] = (uint8_t)code;
+    return 4;
+}
