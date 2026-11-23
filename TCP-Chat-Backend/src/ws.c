@@ -51,3 +51,57 @@ int ws_upgrade_response(char* out, size_t cap, const char accept[WS_ACCEPT_SIZE]
                      accept);
     return (n > 0 && (size_t)n < cap) ? n : -1;
 }
+
+static int opcode_known(int op) {
+    return op == WS_OP_CONT || op == WS_OP_TEXT || op == WS_OP_BINARY ||
+           op == WS_OP_CLOSE || op == WS_OP_PING || op == WS_OP_PONG;
+}
+
+int ws_parse_frame(uint8_t* buf, size_t len, size_t max_payload, ws_frame_t* f) {
+    if (len < 2) return 0;
+
+    int fin = buf[0] & 0x80;
+    int rsv = buf[0] & 0x70;
+    int opcode = buf[0] & 0x0F;
+    int masked = buf[1] & 0x80;
+    uint64_t plen = buf[1] & 0x7F;
+    size_t pos = 2;
+
+    /* No extensions are negotiated, so RSV bits must be zero. */
+    if (rsv || !opcode_known(opcode)) return -1;
+    if (!masked) return -1;
+
+    int control = opcode & 0x8;
+    if (control && (!fin || plen > 125)) return -1;
+
+    if (plen == 126) {
+        if (len < pos + 2) return 0;
+        plen = ((uint64_t)buf[2] << 8) | buf[3];
+        pos += 2;
+        if (plen < 126) return -1;           /* must use the shortest form */
+    } else if (plen == 127) {
+        if (len < pos + 8) return 0;
+        plen = 0;
+        for (int i = 0; i < 8; i++) plen = (plen << 8) | buf[2 + i];
+        pos += 8;
+        if (plen >> 63) return -1;           /* most significant bit must be 0 */
+        if (plen <= 0xFFFF) return -1;
+    }
+
+    if (plen > max_payload) return -1;
+    if (len < pos + 4) return 0;
+    uint8_t mask[4];
+    memcpy(mask, buf + pos, 4);
+    pos += 4;
+
+    if (len - pos < plen) return 0;
+
+    uint8_t* payload = buf + pos;
+    for (uint64_t i = 0; i < plen; i++) payload[i] ^= mask[i & 3];
+
+    f->fin = fin ? 1 : 0;
+    f->opcode = opcode;
+    f->payload = payload;
+    f->len = (size_t)plen;
+    return (int)(pos + plen);
+}

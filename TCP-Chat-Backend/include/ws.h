@@ -49,6 +49,20 @@ typedef enum {
 #define WS_CLOSE_UNSUPPORTED  1003
 #define WS_CLOSE_TOO_BIG      1009
 
+typedef struct {
+    int fin;
+    int opcode;
+    uint8_t* payload;   /* points into the input buffer, already unmasked */
+    size_t len;
+} ws_frame_t;
+
+/* Parses one client frame from buf[0..len) and unmasks it in place.
+ * Returns the number of bytes the frame occupies, 0 if more bytes are
+ * needed, or -1 on a protocol violation (unmasked frame, reserved bits,
+ * unknown opcode, fragmented or oversized control frame, payload larger
+ * than max_payload). */
+int ws_parse_frame(uint8_t* buf, size_t len, size_t max_payload, ws_frame_t* f);
+
 /* Computes Sec-WebSocket-Accept for a client key. The key must be the
  * base64 encoding of exactly 16 bytes. Returns 0 or -1. */
 int ws_accept_key(const char* client_key, char out[WS_ACCEPT_SIZE]);
