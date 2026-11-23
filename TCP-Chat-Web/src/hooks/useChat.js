@@ -1,0 +1,156 @@
+import { useCallback, useEffect, useRef, useState } from 'react'
+import sodiumModule from 'libsodium-wrappers'
+
+import { FT, encodeMessage, decodeMessage } from '../protocol/frame.js'
+import { SecureChannel, fingerprint } from '../protocol/secure.js'
+import { Pin, checkPin } from '../protocol/pins.js'
+
+export const Status = Object.freeze({
+  CONNECTING: 'connecting',   // socket opening / handshake running
+  READY: 'ready',             // secure channel up, no name yet
+  REGISTERING: 'registering', // NAME sent, waiting for WELCOME or ERR
+  CHATTING: 'chatting',
+  DISCONNECTED: 'disconnected',
+  UNTRUSTED: 'untrusted',     // pinned fingerprint changed: refuse
+})
+
+const MAX_MESSAGES = 500
+let nextId = 1
+
+function wsUrl() {
+  const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+  return `${proto}//${window.location.host}/ws`
+}
+
+/**
+ * Encrypted chat over WebSocket. The server is the single source of truth:
+ * our own messages are shown only when the server broadcasts them back.
+ */
+export function useChat() {
+  const [status, setStatus] = useState(Status.CONNECTING)
+  const [messages, setMessages] = useState([])
+  const [users, setUsers] = useState([])
+  const [me, setMe] = useState('')
+  const [error, setError] = useState(null)
+  const [serverFingerprint, setServerFingerprint] = useState(null)
+
+  const conn = useRef(null) // { ws, channel, seq }
+  const meRef = useRef('')
+
+  const addMessage = useCallback((m) => {
+    setMessages((prev) => [...prev.slice(-(MAX_MESSAGES - 1)), { id: nextId++, ...m }])
+  }, [])
+
+  const send = useCallback((m, final = false) => {
+    const c = conn.current
+    if (!c?.channel.established) return false
+    c.channel.send(encodeMessage(m, c.seq++), final)
+    return true
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+
+    const handle = (m) => {
+      switch (m.type) {
+        case FT.WELCOME:
+          setStatus(Status.CHATTING)
+          setError(null)
+          addMessage({ kind: 'system', text: m.text })
+          break
+        case FT.CHAT:
+          addMessage({ kind: 'chat', name: m.name, text: m.text, ts: m.timestamp,
+                       own: m.name === meRef.current })
+          break
+        case FT.JOIN:
+          setUsers((u) => (u.includes(m.name) ? u : [...u, m.name]))
+          addMessage({ kind: 'system', text: `${m.name} joined the chat` })
+          break
+        case FT.LEAVE:
+          setUsers((u) => u.filter((n) => n !== m.name))
+          addMessage({ kind: 'system', text: `${m.name} left the chat` })
+          break
+        case FT.USERS:
+          setUsers(m.users)
+          break
+        case FT.ERR:
+          setError(m.text)
+          // A rejected NAME sends us back to the login screen.
+          setStatus((s) => {
+            if (s !== Status.REGISTERING) return s
+            meRef.current = ''
+            setMe('')
+            return Status.READY
+          })
+          break
+        default:
+          break
+      }
+    }
+
+    const connect = async () => {
+      await sodiumModule.ready
+      if (cancelled) return
+      const sodium = sodiumModule
+
+      const ws = new WebSocket(wsUrl())
+      ws.binaryType = 'arraybuffer'
+
+      const channel = new SecureChannel(sodium, {
+        emit: (rec) => ws.send(rec),
+        verify: (pk) => {
+          const fp = fingerprint(sodium, pk)
+          setServerFingerprint(fp)
+          const pin = checkPin(window.localStorage, window.location.host, fp)
+          if (pin === Pin.MISMATCH) {
+            setStatus(Status.UNTRUSTED)
+            return false
+          }
+          if (pin === Pin.NEW)
+            addMessage({ kind: 'system', text: `New server, fingerprint saved: ${fp}` })
+          return true
+        },
+      })
+      conn.current = { ws, channel, seq: 0 }
+
+      ws.onopen = () => channel.start()
+
+      ws.onmessage = (e) => {
+        try {
+          const plain = channel.receive(new Uint8Array(e.data))
+          if (plain === null) {
+            if (channel.established) setStatus(Status.READY)
+            return
+          }
+          handle(decodeMessage(plain))
+        } catch (err) {
+          setError(err.message)
+          ws.close()
+        }
+      }
+
+      ws.onclose = () => {
+        if (conn.current?.ws === ws) conn.current = null
+        setStatus((s) => (s === Status.UNTRUSTED ? s : Status.DISCONNECTED))
+      }
+    }
+
+    connect()
+    return () => {
+      cancelled = true
+      conn.current?.ws.close()
+    }
+  }, [addMessage])
+
+  const login = useCallback((name) => {
+    meRef.current = name
+    setMe(name)
+    setError(null)
+    setStatus(Status.REGISTERING)
+    send({ type: FT.NAME, name })
+  }, [send])
+
+  const sendText = useCallback((text) => send({ type: FT.MSG, text }), [send])
+
+  return { status, messages, users, me, error, serverFingerprint, login, sendText }
+}

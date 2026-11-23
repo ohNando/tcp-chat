@@ -1,121 +1,110 @@
-// src/App.jsx
+import { useEffect, useRef, useState } from 'react'
 
-import React, { useState, useEffect, useRef } from 'react';
-import { useWebSocket } from './hooks/useWebSocket'; 
-import './App.css';
+import { Status, useChat } from './hooks/useChat'
+import { NAME_MAX_LEN, TEXT_MAX_LEN } from './protocol/frame'
+import './App.css'
 
-const App = () => { 
-    const [username, setUsername] = useState(''); 
-    const { messages, isConnected, sendMessage, setMessages } = useWebSocket();
-    const [input, setInput] = useState('');
-    
-    const messagesEndRef = useRef(null);
+const STATUS_TEXT = {
+  [Status.CONNECTING]: 'Connecting securely…',
+  [Status.READY]: 'Secure connection established',
+  [Status.REGISTERING]: 'Joining…',
+  [Status.CHATTING]: 'Online',
+  [Status.DISCONNECTED]: 'Disconnected',
+  [Status.UNTRUSTED]: 'Server identity changed',
+}
 
-    useEffect(() => {
-        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-    }, [messages]);
+const formatTime = (ts) =>
+  new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 
-    const handleSend = (e) => { 
-        e.preventDefault(); 
-        const trimmedInput = input.trim();
-        if (trimmedInput && isConnected) {
-            sendMessage(username, trimmedInput); 
-            const localMsg = `[${username}]: ${trimmedInput}`;
-            setMessages(prev => [...prev, localMsg]);
-            setInput('');
-        }
-    };
-    
-    const parseMessage = (msg) => {
-        const serverMatch = msg.match(/^SERVER: (.*)/);
-        if (serverMatch) {
-            return { type: 'server', sender: 'Server', content: serverMatch[1] };
-        }
+function LoginScreen({ status, error, onLogin }) {
+  const [name, setName] = useState('')
+  const canJoin = status === Status.READY && name.trim().length >= 2
 
-        const chatMatch = msg.match(/^\[(.*?)\]: (.*)/);
-        if (chatMatch) {
-            const sender = chatMatch[1];
-            const content = chatMatch[2];
-            const type = (sender === username) ? 'own' : 'other';
-            return { type, sender, content };
-        }
-        
-        return { type: 'other', sender: 'Unknown', content: msg }; 
-    };
+  const submit = (e) => {
+    e.preventDefault()
+    if (canJoin) onLogin(name.trim())
+  }
 
-    
-    if (!username) {
-        return (
-            <div className="login-screen">
-                <h2>TCP Chat Köprüsü</h2>
-                <p className={`status ${isConnected ? 'status-connected' : 'status-disconnected'}`}>
-                    Durum: {isConnected ? 'Connected (Port 8081)' : 'Waiting for backend ...'}
-                </p>
-                <input
-                    type="text"
-                    value={input}
-                    onChange={(e) => setInput(e.target.value)}
-                    placeholder="Enter your username"
-                    onKeyDown={(e) => { if (e.key === 'Enter' && input.trim()) setUsername(input.trim()); }}
-                />
-                <button onClick={() => { if (input.trim()) setUsername(input.trim()); }}
-                        disabled={!input.trim() || !isConnected}>
-                    Sohbete Başla
-                </button>
+  return (
+    <form className="login-screen" onSubmit={submit}>
+      <h2>TCP Chat</h2>
+      <p className={`status status-${status}`}>{STATUS_TEXT[status]}</p>
+      <input
+        type="text"
+        value={name}
+        maxLength={NAME_MAX_LEN}
+        onChange={(e) => setName(e.target.value)}
+        placeholder="Your name"
+        autoFocus
+      />
+      <button type="submit" disabled={!canJoin}>Join chat</button>
+      {error && <p className="error">{error}</p>}
+    </form>
+  )
+}
+
+function ChatScreen({ status, me, messages, onSend }) {
+  const [input, setInput] = useState('')
+  const endRef = useRef(null)
+
+  useEffect(() => {
+    endRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [messages])
+
+  const submit = (e) => {
+    e.preventDefault()
+    const text = input.trim()
+    if (text && onSend(text)) setInput('')
+  }
+
+  const online = status === Status.CHATTING
+
+  return (
+    <div className="chat-container">
+      <header className="header">
+        <h1>TCP Chat</h1>
+        <p className={`status status-${status}`}>
+          {me} · {STATUS_TEXT[status]}
+        </p>
+      </header>
+
+      <div className="messages-box">
+        {messages.map((m) =>
+          m.kind === 'chat' ? (
+            <div key={m.id} className={`message ${m.own ? 'own' : 'other'}`}>
+              {!m.own && <div className="message-sender">{m.name}</div>}
+              <div className="message-content">{m.text}</div>
+              <div className="message-time">{formatTime(m.ts)}</div>
             </div>
-        );
-    }
+          ) : (
+            <div key={m.id} className="message server">{m.text}</div>
+          ),
+        )}
+        <div ref={endRef} />
+      </div>
 
-    return (
-        <div className="chat-container">
-            <header className="header">
-                <h1>TCP Chat Köprüsü</h1>
-                <p className={`status ${isConnected ? 'status-connected' : 'status-disconnected'}`}>
-                    Kullanıcı: {username} | Durum: {isConnected ? 'Online' : 'Offline'}
-                </p>
-            </header>
-            
-            <div className="messages-box">
-                {messages.map((msg, index) => {
-                    const parsed = parseMessage(msg.trim());
+      <form onSubmit={submit} className="input-form">
+        <input
+          type="text"
+          value={input}
+          maxLength={TEXT_MAX_LEN}
+          onChange={(e) => setInput(e.target.value)}
+          placeholder="Type a message…"
+          disabled={!online}
+        />
+        <button type="submit" disabled={!online || !input.trim()}>Send</button>
+      </form>
+    </div>
+  )
+}
 
-                    if (parsed.type === 'server') {
-                        return (
-                            <div key={index} className="message server">
-                                {parsed.content}
-                            </div>
-                        );
-                    }
+export default function App() {
+  const chat = useChat()
+  const inRoom = chat.status === Status.CHATTING || (chat.me && chat.status === Status.DISCONNECTED)
 
-                    return (
-                        <div key={index} className={`message ${parsed.type}`}>
-                            <div className="message-sender">{parsed.type === 'other' ? parsed.sender : ''}</div>
-                            <div className="message-content">
-                                {parsed.content}
-                            </div>
-                        </div>
-                    );
-                })}
-                {}
-                <div ref={messagesEndRef} />
-            </div>
-
-            <form onSubmit={handleSend} className="input-form">
-                <input
-                    type="text"
-                    value={input}
-                    onChange={(e) => setInput(e.target.value)}
-                    placeholder="Enter your message..."
-                    disabled={!isConnected}
-                />
-                <button 
-                    type="submit" 
-                    disabled={!isConnected || !input.trim()}>
-                    Send
-                </button>
-            </form>
-        </div>
-    );
-};
-
-export default App;
+  return inRoom ? (
+    <ChatScreen status={chat.status} me={chat.me} messages={chat.messages} onSend={chat.sendText} />
+  ) : (
+    <LoginScreen status={chat.status} error={chat.error} onLogin={chat.login} />
+  )
+}
