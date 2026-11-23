@@ -11,7 +11,7 @@ void chat(const char* szMessage, int sender_sockfd){
                 if(clients[i].pending_removal == 0){
                     clients[i].pending_removal = 1;
                     sockets_to_remove[removel_count++] = clients[i].sockfd;
-                    printf("(-)| Error writing to chat socket. Marking for removal.\n", clients[i].sockfd);
+                    printf("(-)| Error writing to chat socket (fd: %d). Marking for removal.\n", clients[i].sockfd);
                 }
             }
         }
@@ -28,7 +28,6 @@ void chat(const char* szMessage, int sender_sockfd){
 }
 
 void removeClient(int rem_sockfd) {
-    char leaveMsg[MAX_BUFSIZE] = {0}; 
     struct sockaddr_in temp_addr;
     char nameBuf[NAME_LEN] = {0};
     int found = 0;
@@ -210,6 +209,7 @@ void startServerLoop(int listen_sockfd){
 }
 
 void* handleGuiIncoming(void* arg){
+    (void)arg;
     char gui_message[MAX_BUFSIZE];
 
     while(1){

@@ -14,12 +14,13 @@ static struct lws_protocols protocols[] = {
         .per_session_data_size = 0,
         .rx_buffer_size = 0,
     },
-    { NULL, NULL, 0, 0 } // terminator
+    LWS_PROTOCOL_LIST_TERM
 };
 
 int callback_chat(struct lws* wsi, enum lws_callback_reasons reason,
                          void* user, void* in, size_t len) {
     char incoming_messsage[MAX_BUFSIZE];
+    (void)user;
 
     switch (reason){
         case LWS_CALLBACK_ESTABLISHED:
@@ -72,6 +73,8 @@ int callback_chat(struct lws* wsi, enum lws_callback_reasons reason,
                 }
             }
             break;
+        default:
+            break;
     }
 
     return 0;
@@ -92,6 +95,7 @@ int send_message_to_gui(const char* message){
 }
 
 void* start_websocket_server(void* arg){
+    (void)arg;
     struct lws_context_creation_info info ={
         .port = WS_PORT,
         .iface = NULL,
