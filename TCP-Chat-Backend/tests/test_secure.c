@@ -104,6 +104,56 @@ TEST(no_data_before_handshake) {
     CHECK_EQ_INT(secure_send(&cli, (const uint8_t*)"x", 1, 0), -1);
 }
 
+TEST(tampered_record_is_rejected) {
+    uint8_t* rec; size_t len, n;
+    reset();
+    pump();
+    secure_send(&cli, (const uint8_t*)"transfer 10 TL", 14, 0);
+    pop(&to_server, &rec, &len);
+    rec[3] ^= 0x01;
+    CHECK_EQ_INT(secure_recv(&srv, rec, len, out, sizeof(out), &n), SECURE_ERR);
+    CHECK_EQ_INT(srv.state, SECURE_FAILED);
+}
+
+TEST(replayed_record_is_rejected) {
+    uint8_t* rec; size_t len, n;
+    uint8_t copy[RECORD_MAX_BODY];
+    reset();
+    pump();
+    secure_send(&cli, (const uint8_t*)"once", 4, 0);
+    pop(&to_server, &rec, &len);
+    memcpy(copy, rec, len);
+
+    CHECK_EQ_INT(secure_recv(&srv, rec, len, out, sizeof(out), &n), SECURE_DATA);
+    CHECK_EQ_INT(secure_recv(&srv, copy, len, out, sizeof(out), &n), SECURE_ERR);
+}
+
+TEST(reordered_records_are_rejected) {
+    uint8_t *a, *b; size_t alen, blen, n;
+    uint8_t first[RECORD_MAX_BODY];
+    reset();
+    pump();
+    secure_send(&cli, (const uint8_t*)"first", 5, 0);
+    secure_send(&cli, (const uint8_t*)"second", 6, 0);
+    pop(&to_server, &a, &alen);
+    memcpy(first, a, alen);
+    pop(&to_server, &b, &blen);
+
+    CHECK_EQ_INT(secure_recv(&srv, b, blen, out, sizeof(out), &n), SECURE_ERR);
+}
+
+TEST(final_record_ends_stream) {
+    uint8_t* rec; size_t len, n;
+    reset();
+    pump();
+    CHECK_EQ_INT(secure_send(&cli, (const uint8_t*)"bye", 3, 1), 0);
+    CHECK_EQ_INT(secure_send(&cli, (const uint8_t*)"more", 4, 0), -1);
+
+    pop(&to_server, &rec, &len);
+    CHECK_EQ_INT(secure_recv(&srv, rec, len, out, sizeof(out), &n), SECURE_DATA);
+    CHECK_EQ_INT(srv.state, SECURE_PEER_FINISHED);
+}
+
 int main(void) {
     if (sodium_init() < 0) return 1;
     unsigned char seed[crypto_sign_SEEDBYTES];
@@ -113,5 +163,9 @@ int main(void) {
     RUN(handshake_establishes_both_sides);
     RUN(data_flows_both_ways);
     RUN(no_data_before_handshake);
+    RUN(tampered_record_is_rejected);
+    RUN(replayed_record_is_rejected);
+    RUN(reordered_records_are_rejected);
+    RUN(final_record_ends_stream);
     return TEST_REPORT();
 }
