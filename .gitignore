@@ -1,0 +1,18 @@
+# Build artifacts
+TCP-Chat-Backend/bin/
+TCP-Chat-Backend/lib/
+TCP-Chat-Backend/tests/bin/
+TCP-Chat-Desktop/build/
+*.o
+*.d
+
+# Secrets
+*.key
+server_identity.key
+
+# Dependencies
+node_modules/
+
+# Editors
+.vscode/
+.idea/
