@@ -1,8 +1,9 @@
 # Web client
 
 A React (Vite) chat client that runs in the browser and talks to the C
-server over WebSocket, with the same end-to-end encrypted protocol as the
-terminal and desktop clients (libsodium compiled to WebAssembly).
+server over WebSocket. It uses the same encrypted protocol as the terminal
+and desktop clients (libsodium compiled to WebAssembly): traffic between the
+browser and the server is encrypted and the server's identity is verified.
 
 ## Requirements
 
