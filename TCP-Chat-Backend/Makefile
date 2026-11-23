@@ -1,7 +1,10 @@
 # ----- Toolchain -----
 CC      = gcc
-CFLAGS  = -g -Wall -Wextra -Werror -I./include -MMD -MP
-LDLIBS  =
+SODIUM_CFLAGS := $(shell pkg-config --cflags libsodium)
+SODIUM_LIBS   := $(shell pkg-config --libs libsodium)
+
+CFLAGS  = -g -Wall -Wextra -Werror -I./include -MMD -MP $(SODIUM_CFLAGS)
+LDLIBS  = $(SODIUM_LIBS)
 
 # ----- Directories -----
 SRC_DIR = src

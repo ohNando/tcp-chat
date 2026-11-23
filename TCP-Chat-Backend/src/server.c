@@ -5,6 +5,8 @@
 #include "utility.h"
 #include "validate.h"
 
+#include <sodium.h>
+
 #include <getopt.h>
 #include <signal.h>
 #include <sys/epoll.h>
@@ -392,6 +394,11 @@ int main(int argc, char** argv) {
     /* conn_flush() already uses MSG_NOSIGNAL; ignoring SIGPIPE as well
      * protects any other write path from killing the process. */
     signal(SIGPIPE, SIG_IGN);
+
+    if (sodium_init() < 0) {
+        fprintf(stderr, "libsodium initialization failed\n");
+        return 1;
+    }
 
     if (room_init(&room, (size_t)max_clients) < 0) {
         fprintf(stderr, "out of memory\n");

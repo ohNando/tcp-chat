@@ -5,6 +5,8 @@
 #include "utility.h"
 #include "validate.h"
 
+#include <sodium.h>
+
 #include <poll.h>
 #include <signal.h>
 #include <stdarg.h>
@@ -277,6 +279,11 @@ int main(int argc, char** argv) {
 
     /* send() uses MSG_NOSIGNAL; this guards any other write path. */
     signal(SIGPIPE, SIG_IGN);
+
+    if (sodium_init() < 0) {
+        fprintf(stderr, "libsodium initialization failed\n");
+        return 1;
+    }
     use_color = isatty(STDOUT_FILENO);
 
     sockfd = connectToServer(host, port);
