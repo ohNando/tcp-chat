@@ -1,9 +1,11 @@
 #include "test.h"
 #include "room.h"
+#include "peer.h"
 
 /* Room logic only touches the output buffer, so no sockets are needed. */
 static conn_t* member(int id, const char* name) {
-    conn_t* c = conn_create(-1, id, NULL);
+    conn_t* c = conn_create(-1, id, NULL, &test_identity);
+    establish(c);
     if (name) {
         strcpy(c->name, name);
         c->registered = 1;
@@ -98,6 +100,8 @@ TEST(users_message_lists_registered_names) {
 }
 
 int main(void) {
+    if (sodium_init() < 0) return 1;
+    test_identity_init();
     RUN(add_until_full_then_reject);
     RUN(find_name_ignores_case_and_unregistered);
     RUN(broadcast_skips_sender_and_unregistered);

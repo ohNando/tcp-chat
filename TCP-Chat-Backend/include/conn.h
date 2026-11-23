@@ -4,10 +4,14 @@
 /*
  * One client connection on the server.
  *
- * Input:  bytes from read() go into `in` (a framer) which yields records.
- * Output: encoded records are appended to `out`. The event loop flushes
- *         it with nonblocking send(); whatever the kernel does not accept
- *         stays buffered until the socket becomes writable again.
+ * Input:  bytes from read() go into `in` (a framer) which yields records,
+ *         which are passed to the secure channel `sec`.
+ * Output: conn_send() encodes a message, the secure channel encrypts it
+ *         and emits the ciphertext record into `out`. There is no
+ *         plaintext send path: before the handshake, conn_send() fails.
+ *         The event loop flushes `out` with nonblocking send(); whatever
+ *         the kernel does not accept stays buffered until the socket
+ *         becomes writable again.
  *         A client that never reads cannot block anyone else: once its
  *         backlog exceeds CONN_OUT_MAX it is disconnected.
  */
@@ -17,7 +21,9 @@
 #include <stdint.h>
 
 #include "framer.h"
+#include "identity.h"
 #include "message.h"
+#include "secure.h"
 
 #define CONN_OUT_MAX (1024 * 1024)
 
@@ -47,6 +53,9 @@ typedef struct conn {
     size_t out_len;               /* bytes buffered */
     int epoll_out;                /* EPOLLOUT currently requested */
 
+    secure_t sec;
+    uint64_t created_ms;          /* for the handshake timeout */
+
     uint32_t tx_seq;
     int registered;
     char name[NAME_MAX_LEN + 1];
@@ -55,14 +64,21 @@ typedef struct conn {
     int want_close;               /* close at the end of this loop turn */
 } conn_t;
 
-conn_t* conn_create(int fd, int id, const struct sockaddr_in* addr);
+/* Creates a server-side connection whose secure channel waits for a
+ * CLIENT_HELLO signed off by `identity`. */
+conn_t* conn_create(int fd, int id, const struct sockaddr_in* addr,
+                    const identity_t* identity);
 /* Frees memory only; closing the fd is the caller's job. */
 void conn_destroy(conn_t* c);
 
 /* Appends raw bytes to the output buffer. -1 if over CONN_OUT_MAX. */
 int conn_queue(conn_t* c, const void* data, size_t n);
 
-/* Encodes `m` as a record (length prefix + frame) and queues it. */
+/* Queues one record: 4-byte length prefix + body. */
+int conn_queue_record(conn_t* c, const uint8_t* body, size_t len);
+
+/* Encodes `m`, encrypts it and queues the record.
+ * Fails (-1) before the handshake is complete. */
 int conn_send(conn_t* c, const message_t* m);
 
 /* Sends as much buffered output as the socket accepts.

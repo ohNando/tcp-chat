@@ -19,6 +19,7 @@ static source_t listener = { SRC_LISTENER, -1 };
 static source_t sigsrc = { SRC_SIGNAL, -1 };
 static int running = 1;
 static identity_t identity;
+static size_t max_members = SERVER_DEFAULT_MAX_CLIENTS;
 static room_t room;
 static int next_conn_id = 1;
 
@@ -57,6 +58,11 @@ static void handle_name(conn_t* c, const message_t* in) {
         return;
     }
 
+    if (room_member_count(&room) >= max_members) {
+        send_error(c, ERR_ROOM_FULL, "Chat room is full.");
+        c->close_after_flush = 1;
+        return;
+    }
     if (room_find_name(&room, in->name)) {
         send_error(c, ERR_NAME_TAKEN, "That name is already taken.");
         return;
@@ -158,27 +164,35 @@ static void handle_readable(conn_t* c) {
     const uint8_t* body;
     size_t len;
     int r;
-    message_t m;
+    static uint8_t plain[RECORD_MAX_BODY];
+    static message_t m;
 
     while (!c->close_after_flush && (r = framer_next(&c->in, &body, &len)) == 1) {
-        if (message_decode(body, len, &m, NULL) < 0) {
+        size_t plen;
+        int was_established = secure_established(&c->sec);
+        int s = secure_recv(&c->sec, body, len, plain, sizeof(plain), &plen);
+
+        if (s == SECURE_ERR) {
+            /* No error reply: the channel itself is broken or untrusted. */
+            log_info("conn %d (%s): secure channel error: %s", c->id, c->peer,
+                     c->sec.error ? c->sec.error : "unknown");
+            c->want_close = 1;
+            return;
+        }
+        if (s == SECURE_NONE) {
+            if (!was_established && secure_established(&c->sec))
+                log_info("conn %d (%s): handshake complete", c->id, c->peer);
+            continue;
+        }
+
+        if (message_decode(plain, plen, &m, NULL) < 0) {
             protocol_error(c, "Malformed frame.");
             return;
         }
         handle_message(c, &m);
+        if (c->sec.state == SECURE_PEER_FINISHED) c->close_after_flush = 1;
     }
     if (r < 0) protocol_error(c, "Record too large.");
-}
-
-static void reject_full(int fd, const struct sockaddr_in* addr) {
-    conn_t* tmp = conn_create(fd, 0, addr);
-    if (tmp) {
-        send_error(tmp, ERR_ROOM_FULL, "Chat room is full.");
-        conn_flush(tmp); /* best effort */
-        log_info("rejected %s: room full", tmp->peer);
-        conn_destroy(tmp);
-    }
-    close(fd);
 }
 
 static void accept_clients(void) {
@@ -193,16 +207,20 @@ static void accept_clients(void) {
             return;
         }
 
-        conn_t* c = conn_create(fd, next_conn_id++, &addr);
+        conn_t* c = conn_create(fd, next_conn_id++, &addr, &identity);
         if (!c) {
             close(fd);
             continue;
         }
         if (room_add(&room, c) < 0) {
+            /* Even the spare slots are taken: nothing can be sent before a
+             * handshake, so just hang up. */
+            log_info("rejected %s: no free connection slots", c->peer);
             conn_destroy(c);
-            reject_full(fd, &addr);
+            close(fd);
             continue;
         }
+        c->created_ms = now_ms();
 
         struct epoll_event ev = { .events = EPOLLIN, .data.ptr = c };
         if (epoll_ctl(epfd, EPOLL_CTL_ADD, fd, &ev) < 0) {
@@ -416,7 +434,10 @@ int main(int argc, char** argv) {
     identity_fingerprint(identity.pk, fp);
     log_info("server fingerprint: %s", fp);
 
-    if (room_init(&room, (size_t)max_clients) < 0) {
+    /* Extra slots let clients beyond the limit finish the handshake and
+     * receive a proper (encrypted) "room full" error. */
+    max_members = (size_t)max_clients;
+    if (room_init(&room, max_members + SERVER_SPARE_SLOTS) < 0) {
         fprintf(stderr, "out of memory\n");
         return 1;
     }

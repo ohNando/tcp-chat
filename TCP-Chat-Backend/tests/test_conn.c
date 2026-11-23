@@ -1,6 +1,8 @@
+#define _GNU_SOURCE /* memmem */
 #include "test.h"
 #include "conn.h"
 #include "network.h"
+#include "peer.h"
 
 #include <sys/socket.h>
 #include <unistd.h>
@@ -11,7 +13,7 @@ static conn_t* make_pair(int* peer) {
     if (socketpair(AF_UNIX, SOCK_STREAM, 0, sv) < 0) return NULL;
     net_set_nonblocking(sv[0]);
     *peer = sv[1];
-    return conn_create(sv[0], 1, NULL);
+    return conn_create(sv[0], 1, NULL, &test_identity);
 }
 
 static void close_pair(conn_t* c, int peer) {
@@ -20,26 +22,40 @@ static void close_pair(conn_t* c, int peer) {
     conn_destroy(c);
 }
 
-TEST(sent_message_arrives_as_one_record) {
+TEST(send_fails_before_handshake) {
+    int peer;
+    conn_t* c = make_pair(&peer);
+    message_t m;
+    message_init(&m, FT_PING);
+    CHECK_EQ_INT(conn_send(c, &m), -1);
+    CHECK_EQ_INT(conn_pending_output(c), 0);
+    close_pair(c, peer);
+}
+
+TEST(sent_message_arrives_encrypted_as_one_record) {
     int peer;
     conn_t* c = make_pair(&peer);
     message_t m, got;
+    CHECK_EQ_INT(establish(c), 0);
 
     message_init(&m, FT_JOIN);
     strcpy(m.name, "ali");
     CHECK_EQ_INT(conn_send(c, &m), 0);
-    CHECK(conn_pending_output(c) > 0);
     CHECK_EQ_INT(conn_flush(c), 0);
     CHECK_EQ_INT(conn_pending_output(c), 0);
 
     uint8_t buf[256];
     ssize_t n = read(peer, buf, sizeof(buf));
+    CHECK(memmem(buf, (size_t)n, "ali", 3) == NULL); /* no plaintext on the wire */
+
     framer_t f;
-    const uint8_t* body; size_t len;
+    const uint8_t* body; size_t len, plen;
     framer_init(&f, RECORD_MAX_BODY);
     framer_feed(&f, buf, (size_t)n);
     CHECK_EQ_INT(framer_next(&f, &body, &len), 1);
-    CHECK_EQ_INT(message_decode(body, len, &got, NULL), 0);
+    CHECK_EQ_INT(secure_recv(&test_peer, body, len, test_plain, sizeof(test_plain), &plen),
+                 SECURE_DATA);
+    CHECK_EQ_INT(message_decode(test_plain, plen, &got, NULL), 0);
     CHECK_EQ_INT(got.type, FT_JOIN);
     CHECK_EQ_STR(got.name, "ali");
     framer_free(&f);
@@ -50,6 +66,7 @@ TEST(sequence_number_increments_per_message) {
     int peer;
     conn_t* c = make_pair(&peer);
     message_t m;
+    establish(c);
     message_init(&m, FT_PING);
     conn_send(c, &m);
     conn_send(c, &m);
@@ -86,6 +103,7 @@ TEST(output_backlog_is_capped) {
 TEST(flush_reports_error_when_peer_closed) {
     int peer;
     conn_t* c = make_pair(&peer);
+    establish(c);
     close(peer);
 
     message_t m;
@@ -98,7 +116,10 @@ TEST(flush_reports_error_when_peer_closed) {
 }
 
 int main(void) {
-    RUN(sent_message_arrives_as_one_record);
+    if (sodium_init() < 0) return 1;
+    test_identity_init();
+    RUN(send_fails_before_handshake);
+    RUN(sent_message_arrives_encrypted_as_one_record);
     RUN(sequence_number_increments_per_message);
     RUN(flush_keeps_remainder_when_peer_is_slow);
     RUN(output_backlog_is_capped);
