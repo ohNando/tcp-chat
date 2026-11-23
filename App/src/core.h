@@ -1,4 +1,4 @@
-// C headers from TCP-Chat-Backend, wrapped for C++.
+// C headers from Backend, wrapped for C++.
 #pragma once
 
 extern "C" {

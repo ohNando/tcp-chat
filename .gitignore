@@ -1,8 +1,11 @@
 # Build artifacts
-TCP-Chat-Backend/bin/
-TCP-Chat-Backend/lib/
-TCP-Chat-Backend/tests/bin/
-TCP-Chat-Desktop/build/
+Backend/bin/
+Backend/lib/
+Backend/tests/bin/
+App/build/
+
+# Editor caches (clangd)
+.cache/
 *.o
 *.d
 

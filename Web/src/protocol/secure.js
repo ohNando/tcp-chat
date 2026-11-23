@@ -1,4 +1,4 @@
-// Client side of the secure channel. Mirrors TCP-Chat-Backend/src/secure.c
+// Client side of the secure channel. Mirrors Backend/src/secure.c
 // and handshake.c (see the comments there for the full design).
 //
 //   C -> S  CLIENT_HELLO  "TCHT" | ver | client_eph_pk[32]

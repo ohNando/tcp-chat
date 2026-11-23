@@ -1,4 +1,4 @@
-// Binary frame and message codec. Mirrors TCP-Chat-Backend/src/frame.c and
+// Binary frame and message codec. Mirrors Backend/src/frame.c and
 // message.c byte for byte: any change here must be made there too.
 //
 // Frame header (12 bytes, big-endian):

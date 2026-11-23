@@ -43,7 +43,7 @@ target_link_libraries(imgui PUBLIC PkgConfig::GLFW OpenGL::GL)
 # Protocol and crypto modules are compiled straight from the backend, so the
 # desktop client can never drift from the server's wire format.
 
-set(BACKEND_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../TCP-Chat-Backend)
+set(BACKEND_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../Backend)
 add_library(chat_core STATIC
   ${BACKEND_DIR}/src/bytebuf.c
   ${BACKEND_DIR}/src/frame.c

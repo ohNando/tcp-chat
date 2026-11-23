@@ -36,7 +36,7 @@ TEST_BINS    = $(patsubst $(TEST_DIR)/%.c,$(TEST_BIN_DIR)/%,$(TEST_SRC))
 # ----- Defaults for run targets -----
 PORT      = 8080
 WS_PORT   = 8081
-WEB_ROOT  = ../TCP-Chat-Web/dist
+WEB_ROOT  = ../Web/dist
 SERVER_IP = 127.0.0.1
 
 .PHONY: all build test memcheck run-server run-client clean

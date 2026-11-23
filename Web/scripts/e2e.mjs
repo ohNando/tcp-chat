@@ -1,9 +1,9 @@
 // End-to-end test against the real C server.
 //
-// Starts TCP-Chat-Backend/bin/server in a temporary directory, then joins
+// Starts Backend/bin/server in a temporary directory, then joins
 // the same room with one WebSocket client and one raw TCP client, both using
 // the JavaScript protocol + secure channel. Run: npm run e2e
-// (build the server first with `make` in TCP-Chat-Backend).
+// (build the server first with `make` in Backend).
 
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
@@ -18,7 +18,7 @@ import { FT, ERR, encodeMessage, decodeMessage } from '../src/protocol/frame.js'
 import { SecureChannel, SecureError, fingerprint } from '../src/protocol/secure.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
-const SERVER = join(here, '../../TCP-Chat-Backend/bin/server')
+const SERVER = join(here, '../../Backend/bin/server')
 const TCP_PORT = 18080 + Math.floor(Math.random() * 1000)
 const WS_PORT = TCP_PORT + 1000
 
