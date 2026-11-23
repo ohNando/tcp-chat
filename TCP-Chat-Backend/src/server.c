@@ -10,7 +10,10 @@
 
 #include <sodium.h>
 
+#include <fcntl.h>
 #include <getopt.h>
+#include <limits.h>
+#include <sys/stat.h>
 #include <signal.h>
 #include <sys/epoll.h>
 #include <sys/signalfd.h>
@@ -23,6 +26,7 @@ static source_t sigsrc = { SRC_SIGNAL, -1 };
 static int running = 1;
 static identity_t identity;
 static size_t max_members = SERVER_DEFAULT_MAX_CLIENTS;
+static char web_root[PATH_MAX];   /* resolved; empty = no static files */
 static room_t room;
 static int next_conn_id = 1;
 
@@ -193,6 +197,92 @@ static void http_error(conn_t* c, int status, const char* reason) {
     c->close_after_flush = 1;
 }
 
+static const char* mime_type(const char* path) {
+    static const struct { const char* ext; const char* type; } types[] = {
+        { ".html", "text/html; charset=utf-8" },
+        { ".js",   "text/javascript; charset=utf-8" },
+        { ".mjs",  "text/javascript; charset=utf-8" },
+        { ".css",  "text/css; charset=utf-8" },
+        { ".json", "application/json" },
+        { ".svg",  "image/svg+xml" },
+        { ".png",  "image/png" },
+        { ".ico",  "image/x-icon" },
+        { ".wasm", "application/wasm" },
+        { ".woff2","font/woff2" },
+        { ".txt",  "text/plain; charset=utf-8" },
+    };
+    const char* dot = strrchr(path, '.');
+    if (dot)
+        for (size_t i = 0; i < sizeof(types) / sizeof(types[0]); i++)
+            if (strcmp(dot, types[i].ext) == 0) return types[i].type;
+    return "application/octet-stream";
+}
+
+/* Maps a request target to a file inside web_root. Rejects anything that
+ * could escape it: "..", percent-encoding, backslashes, and symlinks that
+ * resolve outside (checked with realpath). Returns 0 or -1. */
+static int resolve_static(const char* target, char out[PATH_MAX]) {
+    char rel[1024];
+    size_t n = strcspn(target, "?#");      /* ignore query and fragment */
+    if (n == 0 || n >= sizeof(rel) - 16 || target[0] != '/') return -1;
+    memcpy(rel, target, n);
+    rel[n] = '\0';
+
+    if (strchr(rel, '%') || strchr(rel, '\\') || strstr(rel, "/..")) return -1;
+    if (rel[n - 1] == '/') strcat(rel, "index.html");
+
+    char joined[PATH_MAX];
+    if (snprintf(joined, sizeof(joined), "%s%s", web_root, rel) >= (int)sizeof(joined))
+        return -1;
+    if (!realpath(joined, out)) return -1;
+
+    size_t root_len = strlen(web_root);
+    if (strncmp(out, web_root, root_len) != 0 || out[root_len] != '/') return -1;
+    return 0;
+}
+
+static void serve_static(conn_t* c, const http_request_t* req) {
+    int head = strcmp(req->method, "HEAD") == 0;
+    if (!head && strcmp(req->method, "GET") != 0) {
+        http_error(c, 405, "Method Not Allowed");
+        return;
+    }
+
+    char path[PATH_MAX];
+    if (!web_root[0] || resolve_static(req->target, path) < 0) {
+        http_error(c, 404, "Not Found");
+        return;
+    }
+
+    int fd = open(path, O_RDONLY | O_CLOEXEC);
+    struct stat st;
+    if (fd < 0 || fstat(fd, &st) < 0 || !S_ISREG(st.st_mode)) {
+        if (fd >= 0) close(fd);
+        http_error(c, 404, "Not Found");
+        return;
+    }
+
+    char hdr[512];
+    int hn = snprintf(hdr, sizeof(hdr),
+                      "HTTP/1.1 200 OK\r\n"
+                      "Content-Type: %s\r\n"
+                      "Content-Length: %lld\r\n"
+                      "Cache-Control: no-cache\r\n"
+                      "X-Content-Type-Options: nosniff\r\n"
+                      "Connection: close\r\n"
+                      "\r\n",
+                      mime_type(path), (long long)st.st_size);
+    conn_queue(c, hdr, (size_t)hn);
+
+    if (head)
+        close(fd);
+    else
+        conn_attach_file(c, fd, st.st_size);
+    c->close_after_flush = 1;
+    log_info("conn %d (%s): %s %s 200 (%lld bytes)", c->id, c->peer, req->method,
+             req->target, (long long)st.st_size);
+}
+
 /* Handles the first (and only) HTTP request on a connection. */
 static void handle_http(conn_t* c) {
     static http_request_t req;
@@ -220,7 +310,7 @@ static void handle_http(conn_t* c) {
     if (http_header(&req, "Upgrade"))
         http_error(c, 400, "Bad WebSocket Upgrade");
     else
-        http_error(c, 404, "Not Found");
+        serve_static(c, &req);
 }
 
 /* Sends a close frame and closes once it is flushed. */
@@ -423,16 +513,16 @@ static void close_conn(conn_t* c) {
 }
 
 static void update_conn(conn_t* c) {
-    if (conn_pending_output(c) > 0 && conn_flush(c) < 0) {
+    if (conn_has_pending(c) && conn_flush(c) < 0) {
         c->want_close = 1;
         return;
     }
-    if (c->close_after_flush && conn_pending_output(c) == 0) {
+    if (c->close_after_flush && !conn_has_pending(c)) {
         c->want_close = 1;
         return;
     }
 
-    int want_out = conn_pending_output(c) > 0;
+    int want_out = conn_has_pending(c);
     if (want_out != c->epoll_out) {
         struct epoll_event ev = {
             .events = EPOLLIN | (want_out ? EPOLLOUT : 0),
@@ -449,7 +539,7 @@ static void expire_handshakes(void) {
     uint64_t now = now_ms();
     for (size_t i = 0; i < room.max; i++) {
         conn_t* c = room.slots[i];
-        if (c && !c->want_close && !secure_established(&c->sec) &&
+        if (c && !c->want_close && !secure_established(&c->sec) && c->file_fd < 0 &&
             c->sec.state != SECURE_PEER_FINISHED &&
             now - c->created_ms > SERVER_HANDSHAKE_TIMEOUT_MS) {
             log_info("conn %d (%s): handshake timed out", c->id, c->peer);
@@ -553,9 +643,10 @@ static void run(void) {
 
 static void usage(const char* prog) {
     fprintf(stderr,
-            "Usage: %s [-p port] [-w ws_port] [-m max_clients] [-k key_file]\n"
+            "Usage: %s [-p port] [-w ws_port] [-d web_root] [-m max_clients] [-k key_file]\n"
             "  -p  TCP port to listen on (default %d)\n"
             "  -w  HTTP/WebSocket port, 0 to disable (default %d)\n"
+            "  -d  directory with the web client to serve over HTTP (default: none)\n"
             "  -m  maximum simultaneous clients, 1-%d (default %d)\n"
             "  -k  server identity key, created if missing (default %s)\n",
             prog, SERVER_DEFAULT_PORT, SERVER_DEFAULT_WS_PORT, USERS_MAX, SERVER_DEFAULT_MAX_CLIENTS,
@@ -578,7 +669,7 @@ int main(int argc, char** argv) {
     const char* key_path = IDENTITY_DEFAULT_PATH;
     int opt;
 
-    while ((opt = getopt(argc, argv, "p:w:m:k:h")) != -1) {
+    while ((opt = getopt(argc, argv, "p:w:d:m:k:h")) != -1) {
         long v;
         switch (opt) {
             case 'p':
@@ -602,6 +693,12 @@ int main(int argc, char** argv) {
                     return 1;
                 }
                 ws_port = (int)v;
+                break;
+            case 'd':
+                if (!realpath(optarg, web_root)) {
+                    fprintf(stderr, "invalid web root %s: %s\n", optarg, strerror(errno));
+                    return 1;
+                }
                 break;
             case 'k':
                 key_path = optarg;
@@ -666,6 +763,7 @@ int main(int argc, char** argv) {
             return 1;
         }
         log_info("http/websocket on port %d", ws_port);
+        if (web_root[0]) log_info("serving web client from %s", web_root);
     }
 
     if (setup_signals() < 0) {

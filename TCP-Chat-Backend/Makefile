@@ -35,6 +35,8 @@ TEST_BINS    = $(patsubst $(TEST_DIR)/%.c,$(TEST_BIN_DIR)/%,$(TEST_SRC))
 
 # ----- Defaults for run targets -----
 PORT      = 8080
+WS_PORT   = 8081
+WEB_ROOT  = ../TCP-Chat-Web/dist
 SERVER_IP = 127.0.0.1
 
 .PHONY: all build test memcheck run-server run-client clean
@@ -68,7 +70,7 @@ memcheck: $(TEST_BINS)
 	done; exit $$status
 
 run-server: $(SERVER_BIN)
-	$(SERVER_BIN) -p $(PORT)
+	$(SERVER_BIN) -p $(PORT) -w $(WS_PORT) $(if $(wildcard $(WEB_ROOT)),-d $(WEB_ROOT))
 
 run-client: $(CLIENT_BIN)
 	$(CLIENT_BIN) $(SERVER_IP) $(PORT)

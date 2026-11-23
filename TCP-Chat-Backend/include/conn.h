@@ -17,6 +17,7 @@
  */
 
 #include <netinet/in.h>
+#include <sys/types.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -62,6 +63,11 @@ typedef struct conn {
     size_t out_len;               /* bytes buffered */
     int epoll_out;                /* EPOLLOUT currently requested */
 
+    /* Static file being streamed with sendfile() after the headers. */
+    int file_fd;
+    off_t file_off;
+    off_t file_len;
+
     /* WebSocket message being reassembled from fragments. */
     uint8_t* ws_msg;
     size_t ws_msg_len;
@@ -96,11 +102,19 @@ int conn_queue_record(conn_t* c, const uint8_t* body, size_t len);
  * Fails (-1) before the handshake is complete. */
 int conn_send(conn_t* c, const message_t* m);
 
-/* Sends as much buffered output as the socket accepts.
+/* Sends as much buffered output (then the attached file, if any) as the
+ * socket accepts.
  * Returns 0 when everything is sent, 1 if data is still pending,
  * -1 on a socket error. */
 int conn_flush(conn_t* c);
 
+/* Bytes waiting in the output buffer (not counting a file being sent). */
 size_t conn_pending_output(const conn_t* c);
+
+/* True while buffered bytes or file contents are still to be sent. */
+int conn_has_pending(const conn_t* c);
+
+/* Streams an open file after the buffered output; takes ownership of fd. */
+void conn_attach_file(conn_t* c, int fd, off_t len);
 
 #endif

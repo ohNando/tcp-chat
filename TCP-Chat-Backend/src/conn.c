@@ -5,7 +5,9 @@
 #include <errno.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/sendfile.h>
 #include <sys/socket.h>
+#include <unistd.h>
 
 static int emit_record(void* ctx, const uint8_t* body, size_t len) {
     return conn_queue_record(ctx, body, len);
@@ -29,6 +31,7 @@ conn_t* conn_create(int fd, int id, const struct sockaddr_in* addr,
     secure_server_init(&c->sec, identity, emit_record, c);
     c->src.kind = SRC_CONN;
     c->transport = transport;
+    c->file_fd = -1;
     c->src.fd = fd;
     c->id = id;
     if (addr)
@@ -42,6 +45,7 @@ void conn_destroy(conn_t* c) {
     if (!c) return;
     secure_wipe(&c->sec);
     framer_free(&c->in);
+    if (c->file_fd >= 0) close(c->file_fd);
     free(c->ws_msg);
     free(c->out);
     free(c);
@@ -109,6 +113,32 @@ int conn_send(conn_t* c, const message_t* m) {
     return secure_send(&c->sec, frame, (size_t)n, 0);
 }
 
+int conn_has_pending(const conn_t* c) {
+    return conn_pending_output(c) > 0 || c->file_fd >= 0;
+}
+
+void conn_attach_file(conn_t* c, int fd, off_t len) {
+    if (c->file_fd >= 0) close(c->file_fd);
+    c->file_fd = fd;
+    c->file_off = 0;
+    c->file_len = len;
+}
+
+/* sendfile(): the kernel copies file pages straight to the socket. */
+static int flush_file(conn_t* c) {
+    while (c->file_off < c->file_len) {
+        ssize_t n = sendfile(c->src.fd, c->file_fd, &c->file_off,
+                             (size_t)(c->file_len - c->file_off));
+        if (n > 0) continue;
+        if (n < 0 && errno == EINTR) continue;
+        if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) return 1;
+        return -1; /* error, or file shrank underneath us */
+    }
+    close(c->file_fd);
+    c->file_fd = -1;
+    return 0;
+}
+
 int conn_flush(conn_t* c) {
     while (conn_pending_output(c) > 0) {
         /* MSG_NOSIGNAL: a peer that already went away must produce
@@ -125,5 +155,5 @@ int conn_flush(conn_t* c) {
     }
     c->out_off = 0;
     c->out_len = 0;
-    return 0;
+    return c->file_fd >= 0 ? flush_file(c) : 0;
 }
