@@ -1,6 +1,6 @@
 # ----- Toolchain -----
 CC      = gcc
-CFLAGS  = -g -Wall -Wextra -I./include -MMD -MP
+CFLAGS  = -g -Wall -Wextra -Werror -I./include -MMD -MP
 LDLIBS  = -lpthread
 
 # ----- Directories -----
