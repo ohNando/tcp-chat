@@ -43,9 +43,33 @@ TEST(text_rules) {
     CHECK(!text_valid(big));
 }
 
+TEST(name_rules) {
+    CHECK(name_valid("ali"));
+    CHECK(name_valid("Emir_Han-42.x"));
+    CHECK(name_valid("Şükrü"));
+    CHECK(name_valid("ab"));
+    CHECK(!name_valid("a"));
+    CHECK(!name_valid(""));
+    CHECK(!name_valid("has space"));
+    CHECK(!name_valid("semi;colon"));
+    CHECK(!name_valid("esc\x1b"));
+    CHECK(!name_valid("bad\xC3("));
+    CHECK(name_valid("abcdefghijklmnopqrstuvwx"));   /* 24 */
+    CHECK(!name_valid("abcdefghijklmnopqrstuvwxy")); /* 25 */
+}
+
+TEST(name_equality_ignores_ascii_case) {
+    CHECK(name_equal("Ali", "ali"));
+    CHECK(name_equal("ALI", "aLi"));
+    CHECK(!name_equal("ali", "alii"));
+    CHECK(!name_equal("ali", "veli"));
+}
+
 int main(void) {
     RUN(utf8_accepts_valid_sequences);
     RUN(utf8_rejects_invalid_sequences);
     RUN(text_rules);
+    RUN(name_rules);
+    RUN(name_equality_ignores_ascii_case);
     return TEST_REPORT();
 }

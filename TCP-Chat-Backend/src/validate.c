@@ -1,6 +1,7 @@
 #include "validate.h"
 #include "message.h"
 
+#include <ctype.h>
 #include <stdint.h>
 #include <string.h>
 
@@ -52,4 +53,27 @@ int text_valid(const char* s) {
     if (!utf8_valid(s, n)) return 0;
     if (has_control_chars(s, n, 1)) return 0;
     return 1;
+}
+
+int name_valid(const char* s) {
+    size_t n = strlen(s);
+    if (n < NAME_MIN_LEN || n > NAME_MAX_LEN) return 0;
+    if (!utf8_valid(s, n)) return 0;
+
+    for (size_t i = 0; i < n; i++) {
+        unsigned char c = (unsigned char)s[i];
+        if (c >= 0x80) continue; /* part of a multi-byte character */
+        if (isalnum(c) || c == '_' || c == '-' || c == '.') continue;
+        return 0;
+    }
+    return 1;
+}
+
+int name_equal(const char* a, const char* b) {
+    while (*a && *b) {
+        if (tolower((unsigned char)*a) != tolower((unsigned char)*b)) return 0;
+        a++;
+        b++;
+    }
+    return *a == *b;
 }

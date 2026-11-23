@@ -18,4 +18,14 @@ int utf8_valid(const char* s, size_t n);
  * except tab. */
 int text_valid(const char* s);
 
+#define NAME_MIN_LEN 2
+
+/* Names: NAME_MIN_LEN..NAME_MAX_LEN bytes, valid UTF-8, made of ASCII
+ * letters, digits, '_', '-', '.' or any non-ASCII character (so names
+ * like "Şükrü" work). No spaces or control characters. */
+int name_valid(const char* s);
+
+/* Case-insensitive (ASCII) comparison used for duplicate detection. */
+int name_equal(const char* a, const char* b);
+
 #endif
