@@ -43,7 +43,24 @@ function LoginScreen({ status, error, onLogin }) {
   )
 }
 
-function ChatScreen({ status, me, messages, reconnectIn, onSend }) {
+function UserList({ users, me }) {
+  return (
+    <aside className="user-list">
+      <h3>Online · {users.length}</h3>
+      <ul>
+        {[...users].sort((a, b) => a.localeCompare(b)).map((u) => (
+          <li key={u} className={u === me ? 'me' : ''}>
+            <span className="dot" />
+            {u}
+            {u === me && <span className="you"> (you)</span>}
+          </li>
+        ))}
+      </ul>
+    </aside>
+  )
+}
+
+function ChatScreen({ status, me, messages, users, reconnectIn, onSend }) {
   const [input, setInput] = useState('')
   const endRef = useRef(null)
 
@@ -60,6 +77,7 @@ function ChatScreen({ status, me, messages, reconnectIn, onSend }) {
   const online = status === Status.CHATTING
 
   return (
+    <div className="chat-layout">
     <div className="chat-container">
       <header className="header">
         <h1>TCP Chat</h1>
@@ -97,6 +115,8 @@ function ChatScreen({ status, me, messages, reconnectIn, onSend }) {
         <button type="submit" disabled={!online || !input.trim()}>Send</button>
       </form>
     </div>
+    <UserList users={users} me={me} />
+    </div>
   )
 }
 
@@ -106,7 +126,7 @@ export default function App() {
   const inRoom = Boolean(chat.me) && chat.status !== Status.READY && chat.status !== Status.UNTRUSTED
 
   return inRoom ? (
-    <ChatScreen status={chat.status} me={chat.me} messages={chat.messages}
+    <ChatScreen status={chat.status} me={chat.me} messages={chat.messages} users={chat.users}
                 reconnectIn={chat.reconnectIn} onSend={chat.sendText} />
   ) : (
     <LoginScreen status={chat.status} error={chat.error} onLogin={chat.login} />
