@@ -3,7 +3,7 @@ import sodiumModule from 'libsodium-wrappers'
 
 import { FT, encodeMessage, decodeMessage } from '../protocol/frame.js'
 import { SecureChannel, fingerprint } from '../protocol/secure.js'
-import { Pin, checkPin } from '../protocol/pins.js'
+import { Pin, checkPin, forgetPin, pinnedFingerprint } from '../protocol/pins.js'
 
 export const Status = Object.freeze({
   CONNECTING: 'connecting',   // socket opening / handshake running
@@ -181,5 +181,18 @@ export function useChat() {
 
   const sendText = useCallback((text) => send({ type: FT.MSG, text }), [send])
 
-  return { status, messages, users, me, error, serverFingerprint, reconnectIn, login, sendText }
+  const clearError = useCallback(() => setError(null), [])
+
+  // After the user confirmed out of band that the key change is legitimate.
+  const trustNewServerKey = useCallback(() => {
+    forgetPin(window.localStorage, window.location.host)
+    window.location.reload()
+  }, [])
+
+  const pinned = pinnedFingerprint(window.localStorage, window.location.host)
+
+  return {
+    status, messages, users, me, error, serverFingerprint, pinnedFingerprint: pinned,
+    reconnectIn, login, sendText, clearError, trustNewServerKey,
+  }
 }

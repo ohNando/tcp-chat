@@ -16,7 +16,37 @@ const STATUS_TEXT = {
 const formatTime = (ts) =>
   new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 
-function LoginScreen({ status, error, onLogin }) {
+function Fingerprint({ value }) {
+  return <code className="fingerprint">{value ?? '…'}</code>
+}
+
+function SecurityWarning({ expected, received, onTrust }) {
+  return (
+    <div className="security-warning" role="alert">
+      <h2>Server identity has changed</h2>
+      <p>
+        The server presented a different key than the one remembered for this
+        address. Someone may be intercepting the connection, or the server was
+        reinstalled with a new key. The connection was refused.
+      </p>
+      <dl>
+        <dt>Expected</dt>
+        <dd><Fingerprint value={expected} /></dd>
+        <dt>Received</dt>
+        <dd><Fingerprint value={received} /></dd>
+      </dl>
+      <p>
+        Only continue if the server operator confirms the new fingerprint (it is
+        printed when the server starts).
+      </p>
+      <button type="button" className="danger" onClick={onTrust}>
+        I verified it, trust the new key
+      </button>
+    </div>
+  )
+}
+
+function LoginScreen({ status, error, fingerprint, onLogin }) {
   const [name, setName] = useState('')
   const canJoin = status === Status.READY && name.trim().length >= 2
 
@@ -39,6 +69,11 @@ function LoginScreen({ status, error, onLogin }) {
       />
       <button type="submit" disabled={!canJoin}>Join chat</button>
       {error && <p className="error">{error}</p>}
+      {fingerprint && (
+        <p className="server-key">
+          Server key <Fingerprint value={fingerprint} />
+        </p>
+      )}
     </form>
   )
 }
@@ -60,7 +95,7 @@ function UserList({ users, me }) {
   )
 }
 
-function ChatScreen({ status, me, messages, users, reconnectIn, onSend }) {
+function ChatScreen({ status, me, messages, users, error, reconnectIn, onSend, onDismissError }) {
   const [input, setInput] = useState('')
   const endRef = useRef(null)
 
@@ -78,57 +113,74 @@ function ChatScreen({ status, me, messages, users, reconnectIn, onSend }) {
 
   return (
     <div className="chat-layout">
-    <div className="chat-container">
-      <header className="header">
-        <h1>TCP Chat</h1>
-        <p className={`status status-${status}`}>
-          {me} · {STATUS_TEXT[status]}
-          {status === Status.DISCONNECTED && reconnectIn !== null &&
-            ` · retrying in ${Math.ceil(reconnectIn / 1000)}s`}
-        </p>
-      </header>
+      <div className="chat-container">
+        <header className="header">
+          <h1>TCP Chat</h1>
+          <p className={`status status-${status}`}>
+            {me} · {STATUS_TEXT[status]}
+            {status === Status.DISCONNECTED && reconnectIn !== null &&
+              ` · retrying in ${Math.ceil(reconnectIn / 1000)}s`}
+          </p>
+        </header>
 
-      <div className="messages-box">
-        {messages.map((m) =>
-          m.kind === 'chat' ? (
-            <div key={m.id} className={`message ${m.own ? 'own' : 'other'}`}>
-              {!m.own && <div className="message-sender">{m.name}</div>}
-              <div className="message-content">{m.text}</div>
-              <div className="message-time">{formatTime(m.ts)}</div>
-            </div>
-          ) : (
-            <div key={m.id} className="message server">{m.text}</div>
-          ),
+        {error && (
+          <div className="error-banner" role="alert">
+            <span>{error}</span>
+            <button type="button" onClick={onDismissError} aria-label="Dismiss">×</button>
+          </div>
         )}
-        <div ref={endRef} />
-      </div>
 
-      <form onSubmit={submit} className="input-form">
-        <input
-          type="text"
-          value={input}
-          maxLength={TEXT_MAX_LEN}
-          onChange={(e) => setInput(e.target.value)}
-          placeholder="Type a message…"
-          disabled={!online}
-        />
-        <button type="submit" disabled={!online || !input.trim()}>Send</button>
-      </form>
-    </div>
-    <UserList users={users} me={me} />
+        <div className="messages-box">
+          {messages.map((m) =>
+            m.kind === 'chat' ? (
+              <div key={m.id} className={`message ${m.own ? 'own' : 'other'}`}>
+                {!m.own && <div className="message-sender">{m.name}</div>}
+                <div className="message-content">{m.text}</div>
+                <div className="message-time">{formatTime(m.ts)}</div>
+              </div>
+            ) : (
+              <div key={m.id} className="message server">{m.text}</div>
+            ),
+          )}
+          <div ref={endRef} />
+        </div>
+
+        <form onSubmit={submit} className="input-form">
+          <input
+            type="text"
+            value={input}
+            maxLength={TEXT_MAX_LEN}
+            onChange={(e) => setInput(e.target.value)}
+            placeholder="Type a message…"
+            disabled={!online}
+          />
+          <button type="submit" disabled={!online || !input.trim()}>Send</button>
+        </form>
+      </div>
+      <UserList users={users} me={me} />
     </div>
   )
 }
 
 export default function App() {
   const chat = useChat()
+
+  if (chat.status === Status.UNTRUSTED) {
+    return (
+      <SecurityWarning expected={chat.pinnedFingerprint} received={chat.serverFingerprint}
+                       onTrust={chat.trustNewServerKey} />
+    )
+  }
+
   // Stay on the chat screen while a dropped connection is being restored.
-  const inRoom = Boolean(chat.me) && chat.status !== Status.READY && chat.status !== Status.UNTRUSTED
+  const inRoom = Boolean(chat.me) && chat.status !== Status.READY
 
   return inRoom ? (
     <ChatScreen status={chat.status} me={chat.me} messages={chat.messages} users={chat.users}
-                reconnectIn={chat.reconnectIn} onSend={chat.sendText} />
+                error={chat.error} reconnectIn={chat.reconnectIn}
+                onSend={chat.sendText} onDismissError={chat.clearError} />
   ) : (
-    <LoginScreen status={chat.status} error={chat.error} onLogin={chat.login} />
+    <LoginScreen status={chat.status} error={chat.error} fingerprint={chat.serverFingerprint}
+                 onLogin={chat.login} />
   )
 }
