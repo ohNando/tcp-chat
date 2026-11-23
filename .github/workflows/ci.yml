@@ -1,0 +1,74 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend (build, tests, valgrind)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y libsodium-dev valgrind
+      - name: Build
+        run: make -C Backend
+      - name: Unit tests
+        run: make -C Backend test
+      - name: Unit tests under valgrind
+        run: make -C Backend memcheck
+
+  web:
+    name: Web (lint, tests, build, e2e)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: Web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: Web/package-lock.json
+      - name: Install libsodium
+        run: sudo apt-get update && sudo apt-get install -y libsodium-dev
+      - name: Build the server for the end-to-end test
+        run: make -C ../Backend
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
+      - name: End-to-end test against the C server
+        run: npm run e2e
+
+  desktop:
+    name: Desktop app (build, smoke test)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake pkg-config libsodium-dev libglfw3-dev libgl-dev
+      - name: Configure
+        run: cmake -S App -B App/build
+      - name: Build
+        run: cmake --build App/build -j
+      - name: Smoke test against the C server
+        run: |
+          make -C Backend
+          cd "$(mktemp -d)"
+          "$GITHUB_WORKSPACE/Backend/bin/server" -p 18080 -w 0 &
+          sleep 1
+          "$GITHUB_WORKSPACE/App/build/client_smoke" 127.0.0.1 18080
+          kill %1
