@@ -243,7 +243,7 @@ void ChatClient::acceptPendingKey() {
 }
 
 void ChatClient::rejectPendingKey() {
-    trust_pending_ = false;
+    trust_pending_ = identity_changed_ = false;
     disconnect();
 }
 

@@ -25,6 +25,8 @@ public:
 private:
     void drawConnectScreen();
     void drawChatScreen();
+    void drawTrustPrompt();
+    void drawIdentityWarning();
     void startConnect();
 
     ChatClient client_;

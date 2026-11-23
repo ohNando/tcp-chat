@@ -53,7 +53,7 @@ public:
     const std::string& pinnedFingerprint() const { return pinned_fp_; }
     const std::string& knownServersPath() const { return known_path_; }
     void acceptPendingKey();   // saves the key and reconnects
-    void rejectPendingKey();
+    void rejectPendingKey();   // also dismisses the identity-changed state
 
     // ---- state for the UI ------------------------------------------------
     ConnState state() const { return state_; }
