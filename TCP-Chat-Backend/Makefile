@@ -17,7 +17,7 @@ COMMON_OBJ = $(OBJ_DIR)/utility.o $(OBJ_DIR)/network.o
 PROTO_OBJ  = $(OBJ_DIR)/bytebuf.o $(OBJ_DIR)/frame.o $(OBJ_DIR)/framer.o $(OBJ_DIR)/message.o $(OBJ_DIR)/validate.o
 CORE_OBJ   = $(OBJ_DIR)/conn.o $(OBJ_DIR)/room.o
 SERVER_OBJ = $(OBJ_DIR)/server.o $(COMMON_OBJ) $(PROTO_OBJ) $(CORE_OBJ)
-CLIENT_OBJ = $(OBJ_DIR)/client.o $(COMMON_OBJ)
+CLIENT_OBJ = $(OBJ_DIR)/client.o $(COMMON_OBJ) $(PROTO_OBJ)
 DEPS       = $(wildcard $(OBJ_DIR)/*.d $(TEST_BIN_DIR)/*.d)
 
 # ----- Tests -----

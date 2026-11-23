@@ -1,14 +1,23 @@
 #ifndef CLIENT_H
 #define CLIENT_H
 
-#include "common.h"
-#include "utility.h"
-#include "network.h"
+/*
+ * Terminal chat client.
+ *
+ * A single poll() loop watches stdin and the socket, so no threads are
+ * needed: whichever is readable gets handled. The client is a small state
+ * machine: it first asks for a name until the server sends WELCOME, then
+ * switches to chatting.
+ */
 
-void* receiveMsgHandler(void*);
-void* sendMsgHandler(void*);
+#define CLIENT_DEFAULT_HOST "127.0.0.1"
+#define CLIENT_DEFAULT_PORT 8080
+#define CLIENT_LINE_MAX     4096
 
-int initClient(const char*,int);
-void startClientLoop(int);
+typedef enum {
+    CLIENT_NAMING,
+    CLIENT_CHATTING,
+    CLIENT_QUITTING,
+} client_state_t;
 
 #endif
