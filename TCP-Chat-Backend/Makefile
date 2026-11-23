@@ -1,71 +1,44 @@
-# ----- Binary Names -----
-SERVER_BIN = ./bin/server
-CLIENT_BIN = ./bin/client
+# ----- Toolchain -----
+CC      = gcc
+CFLAGS  = -g -Wall -Wextra -I./include
+LDLIBS  = -lpthread
 
-# ----- Object Files -----
-SERVER_OBJ = ./lib/server.o
-CLIENT_OBJ = ./lib/client.o
-UTILITY_OBJ = ./lib/utility.o
-NETWORK_OBJ = ./lib/network.o
-GUI_BRIDGE_OBJ = ./lib/gui_bridge.o
-QUEUE_OBJ = ./lib/queue.o
+# ----- Directories -----
+SRC_DIR = src
+OBJ_DIR = lib
+BIN_DIR = bin
 
-# GEREKLİ YENİ TANIMLAMALAR
-# 1. Sunucunun İhtiyaç Duyduğu Tüm Ortak Objeler
-SERVER_COMMON_OBJ = $(UTILITY_OBJ) $(NETWORK_OBJ) $(GUI_BRIDGE_OBJ) $(QUEUE_OBJ)
-# 2. İstemcinin İhtiyaç Duyduğu Temel Objeler (GUI Bridge hariç)
-CLIENT_COMMON_OBJ = $(UTILITY_OBJ) $(NETWORK_OBJ)
-ALL_OBJ = $(SERVER_OBJ) $(CLIENT_OBJ) $(SERVER_COMMON_OBJ)
+# ----- Binaries -----
+SERVER_BIN = $(BIN_DIR)/server
+CLIENT_BIN = $(BIN_DIR)/client
 
-# ----- Include Files -----
-INC_PATHS = -I./include/
+# ----- Objects -----
+COMMON_OBJ = $(OBJ_DIR)/utility.o $(OBJ_DIR)/network.o
+SERVER_OBJ = $(OBJ_DIR)/server.o $(OBJ_DIR)/gui_bridge.o $(OBJ_DIR)/queue.o $(COMMON_OBJ)
+CLIENT_OBJ = $(OBJ_DIR)/client.o $(COMMON_OBJ)
 
-# ---- Libs -----
-LIBS = -lpthread
-
-# ----- Default Port and IP -----
-PORT = 8080
+# ----- Defaults for run targets -----
+PORT      = 8080
 SERVER_IP = 127.0.0.1
 
 all: build
 
-# ----------------- NESNE DERLEME KURALLARI (Aynı Kalır) -----------------
-$(SERVER_OBJ): ./src/server.c
-	gcc -g $(INC_PATHS) -o $(SERVER_OBJ) -c ./src/server.c
+build: $(SERVER_BIN) $(CLIENT_BIN)
 
-$(CLIENT_OBJ): ./src/client.c
-	gcc -g $(INC_PATHS) -o $(CLIENT_OBJ) -c ./src/client.c
+$(OBJ_DIR)/%.o: $(SRC_DIR)/%.c
+	$(CC) $(CFLAGS) -c $< -o $@
 
-$(UTILITY_OBJ): ./src/utility.c
-	gcc -g $(INC_PATHS) -o $(UTILITY_OBJ) -c ./src/utility.c
+$(SERVER_BIN): $(SERVER_OBJ)
+	$(CC) -o $@ $^ $(LDLIBS) -lwebsockets
 
-$(NETWORK_OBJ): ./src/network.c
-	gcc -g $(INC_PATHS) -o $(NETWORK_OBJ) -c ./src/network.c
+$(CLIENT_BIN): $(CLIENT_OBJ)
+	$(CC) -o $@ $^ $(LDLIBS)
 
-$(GUI_BRIDGE_OBJ): ./src/gui_bridge.c
-	gcc -g $(INC_PATHS) -o $(GUI_BRIDGE_OBJ) -c ./src/gui_bridge.c
-
-$(QUEUE_OBJ): ./src/queue.c
-	gcc -g $(INC_PATHS) -o $(QUEUE_OBJ) -c ./src/queue.c
-
-# ----------------- BUILD HEDEFLERI (Düzeltildi) -----------------
-
-build: build-server build-client
-
-build-server: $(SERVER_OBJ) $(SERVER_COMMON_OBJ)
-    # LWS ve GUI Bridge'i linkler
-	gcc -o $(SERVER_BIN) $(SERVER_OBJ) $(SERVER_COMMON_OBJ) $(LIBS) -lwebsockets
-
-build-client: $(CLIENT_OBJ) $(CLIENT_COMMON_OBJ)
-    # Sadece TCP için gerekli olan Utility ve Network'ü linkler.
-    # GUI_BRIDGE ve QUEUE objeleri KALDIRILDI.
-	gcc -o $(CLIENT_BIN) $(CLIENT_OBJ) $(CLIENT_COMMON_OBJ) $(LIBS)
-
-run-server: build-server
+run-server: $(SERVER_BIN)
 	$(SERVER_BIN) $(PORT)
 
-run-client: build-client
+run-client: $(CLIENT_BIN)
 	$(CLIENT_BIN) $(SERVER_IP) $(PORT)
 
 clean:
-	rm -f $(ALL_OBJ) $(SERVER_BIN) $(CLIENT_BIN)
+	rm -rf $(OBJ_DIR)/*.o $(SERVER_BIN) $(CLIENT_BIN)
