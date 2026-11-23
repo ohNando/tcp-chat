@@ -1,6 +1,6 @@
 # TCP Chat
 
-[![CI](https://github.com/ohNando/C-MultiThread-Chat/actions/workflows/ci.yml/badge.svg)](https://github.com/ohNando/C-MultiThread-Chat/actions/workflows/ci.yml)
+[![CI](https://github.com/ohNando/tcp-chat/actions/workflows/ci.yml/badge.svg)](https://github.com/ohNando/tcp-chat/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 An encrypted chat built from scratch to learn how networking really works:
