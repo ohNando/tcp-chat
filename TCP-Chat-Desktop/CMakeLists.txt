@@ -69,6 +69,7 @@ target_link_libraries(chat_client PUBLIC chat_core)
 
 add_executable(tcp-chat-desktop
   src/main.cpp
+  src/app.cpp
 )
 target_compile_options(tcp-chat-desktop PRIVATE -Wall -Wextra)
 target_link_libraries(tcp-chat-desktop PRIVATE imgui chat_client)
