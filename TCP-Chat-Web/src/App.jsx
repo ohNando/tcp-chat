@@ -43,7 +43,7 @@ function LoginScreen({ status, error, onLogin }) {
   )
 }
 
-function ChatScreen({ status, me, messages, onSend }) {
+function ChatScreen({ status, me, messages, reconnectIn, onSend }) {
   const [input, setInput] = useState('')
   const endRef = useRef(null)
 
@@ -65,6 +65,8 @@ function ChatScreen({ status, me, messages, onSend }) {
         <h1>TCP Chat</h1>
         <p className={`status status-${status}`}>
           {me} · {STATUS_TEXT[status]}
+          {status === Status.DISCONNECTED && reconnectIn !== null &&
+            ` · retrying in ${Math.ceil(reconnectIn / 1000)}s`}
         </p>
       </header>
 
@@ -100,10 +102,12 @@ function ChatScreen({ status, me, messages, onSend }) {
 
 export default function App() {
   const chat = useChat()
-  const inRoom = chat.status === Status.CHATTING || (chat.me && chat.status === Status.DISCONNECTED)
+  // Stay on the chat screen while a dropped connection is being restored.
+  const inRoom = Boolean(chat.me) && chat.status !== Status.READY && chat.status !== Status.UNTRUSTED
 
   return inRoom ? (
-    <ChatScreen status={chat.status} me={chat.me} messages={chat.messages} onSend={chat.sendText} />
+    <ChatScreen status={chat.status} me={chat.me} messages={chat.messages}
+                reconnectIn={chat.reconnectIn} onSend={chat.sendText} />
   ) : (
     <LoginScreen status={chat.status} error={chat.error} onLogin={chat.login} />
   )

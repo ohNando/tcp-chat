@@ -15,6 +15,8 @@ export const Status = Object.freeze({
 })
 
 const MAX_MESSAGES = 500
+const RECONNECT_MIN_MS = 1000
+const RECONNECT_MAX_MS = 15000
 let nextId = 1
 
 function wsUrl() {
@@ -33,6 +35,7 @@ export function useChat() {
   const [me, setMe] = useState('')
   const [error, setError] = useState(null)
   const [serverFingerprint, setServerFingerprint] = useState(null)
+  const [reconnectIn, setReconnectIn] = useState(null)
 
   const conn = useRef(null) // { ws, channel, seq }
   const meRef = useRef('')
@@ -50,6 +53,9 @@ export function useChat() {
 
   useEffect(() => {
     let cancelled = false
+    let untrusted = false
+    let attempt = 0
+    let timer = null
 
     const handle = (m) => {
       switch (m.type) {
@@ -103,6 +109,7 @@ export function useChat() {
           setServerFingerprint(fp)
           const pin = checkPin(window.localStorage, window.location.host, fp)
           if (pin === Pin.MISMATCH) {
+            untrusted = true
             setStatus(Status.UNTRUSTED)
             return false
           }
@@ -119,7 +126,16 @@ export function useChat() {
         try {
           const plain = channel.receive(new Uint8Array(e.data))
           if (plain === null) {
-            if (channel.established) setStatus(Status.READY)
+            if (!channel.established) return
+            attempt = 0
+            setReconnectIn(null)
+            if (meRef.current) {
+              // Reconnected after a drop: rejoin with the same name.
+              setStatus(Status.REGISTERING)
+              channel.send(encodeMessage({ type: FT.NAME, name: meRef.current }, conn.current.seq++))
+            } else {
+              setStatus(Status.READY)
+            }
             return
           }
           handle(decodeMessage(plain))
@@ -131,13 +147,26 @@ export function useChat() {
 
       ws.onclose = () => {
         if (conn.current?.ws === ws) conn.current = null
-        setStatus((s) => (s === Status.UNTRUSTED ? s : Status.DISCONNECTED))
+        setUsers([])
+        if (cancelled || untrusted) return
+        setStatus(Status.DISCONNECTED)
+
+        // Exponential backoff with jitter: 1s, 2s, 4s ... capped at 15s.
+        const delay = Math.min(RECONNECT_MAX_MS, RECONNECT_MIN_MS * 2 ** attempt)
+        const jittered = Math.round(delay * (0.75 + Math.random() * 0.5))
+        attempt++
+        setReconnectIn(jittered)
+        timer = setTimeout(() => {
+          setStatus(Status.CONNECTING)
+          connect()
+        }, jittered)
       }
     }
 
     connect()
     return () => {
       cancelled = true
+      clearTimeout(timer)
       conn.current?.ws.close()
     }
   }, [addMessage])
@@ -152,5 +181,5 @@ export function useChat() {
 
   const sendText = useCallback((text) => send({ type: FT.MSG, text }), [send])
 
-  return { status, messages, users, me, error, serverFingerprint, login, sendText }
+  return { status, messages, users, me, error, serverFingerprint, reconnectIn, login, sendText }
 }
