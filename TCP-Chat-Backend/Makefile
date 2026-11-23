@@ -26,13 +26,16 @@ all: build
 
 build: $(SERVER_BIN) $(CLIENT_BIN)
 
-$(OBJ_DIR)/%.o: $(SRC_DIR)/%.c
+$(OBJ_DIR) $(BIN_DIR):
+	mkdir -p $@
+
+$(OBJ_DIR)/%.o: $(SRC_DIR)/%.c | $(OBJ_DIR)
 	$(CC) $(CFLAGS) -c $< -o $@
 
-$(SERVER_BIN): $(SERVER_OBJ)
+$(SERVER_BIN): $(SERVER_OBJ) | $(BIN_DIR)
 	$(CC) -o $@ $^ $(LDLIBS) -lwebsockets
 
-$(CLIENT_BIN): $(CLIENT_OBJ)
+$(CLIENT_BIN): $(CLIENT_OBJ) | $(BIN_DIR)
 	$(CC) -o $@ $^ $(LDLIBS)
 
 run-server: $(SERVER_BIN)
