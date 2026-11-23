@@ -50,4 +50,5 @@ private:
     char name_[NAME_MAX_LEN + 1] = "";
     char input_[TEXT_MAX_LEN + 1] = "";
     bool focus_input_ = true;
+    uint64_t seen_version_ = 0;   // lines version drawn last frame
 };

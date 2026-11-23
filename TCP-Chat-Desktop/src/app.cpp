@@ -5,6 +5,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstring>
+#include <ctime>
 
 #include "imgui.h"
 
@@ -194,15 +195,41 @@ void App::drawUsers(float height) {
     ImGui::EndChild();
 }
 
+// A stable, readable color per user name (FNV-1a hash -> hue).
+static ImVec4 name_color(const std::string& name) {
+    uint32_t h = 2166136261u;
+    for (unsigned char ch : name) h = (h ^ ch) * 16777619u;
+    float r, g, b;
+    ImGui::ColorConvertHSVtoRGB((h % 360) / 360.0f, 0.55f, 0.95f, r, g, b);
+    return ImVec4(r, g, b, 1.0f);
+}
+
+static std::string clock_text(uint64_t ms) {
+    time_t t = static_cast<time_t>(ms / 1000);
+    struct tm tm;
+    localtime_r(&t, &tm);
+    char buf[8];
+    std::strftime(buf, sizeof(buf), "%H:%M", &tm);
+    return buf;
+}
+
 void App::drawMessages(float height) {
     ImGui::BeginChild("messages", ImVec2(0, height), ImGuiChildFlags_Borders);
+    // Follow new messages only if the user is already at the bottom, so
+    // scrolling up to read history is not interrupted.
+    bool at_bottom = ImGui::GetScrollY() >= ImGui::GetScrollMaxY() - 4.0f;
     ImGui::PushTextWrapPos(0.0f); // wrap at the child's right edge
 
     for (const ChatLine& l : client_.lines()) {
         switch (l.kind) {
             case ChatLine::Chat:
+                ImGui::TextDisabled("%s", clock_text(l.timestamp).c_str());
+                ImGui::SameLine();
+                ImGui::TextColored(l.own ? ImVec4(0.45f, 0.75f, 1.0f, 1.0f) : name_color(l.name),
+                                   "%s", l.name.c_str());
+                ImGui::SameLine(0, 0);
                 // "%s" keeps user text out of the format string.
-                ImGui::TextWrapped("%s: %s", l.name.c_str(), l.text.c_str());
+                ImGui::TextWrapped(": %s", l.text.c_str());
                 break;
             case ChatLine::System:
                 ImGui::TextDisabled("%s", l.text.c_str());
@@ -214,6 +241,13 @@ void App::drawMessages(float height) {
     }
 
     ImGui::PopTextWrapPos();
+
+    uint64_t v = client_.linesVersion();
+    if (v != seen_version_) {
+        const ChatLine* last = client_.lines().empty() ? nullptr : &client_.lines().back();
+        if (at_bottom || (last && last->own)) ImGui::SetScrollHereY(1.0f);
+        seen_version_ = v;
+    }
     ImGui::EndChild();
 }
 
