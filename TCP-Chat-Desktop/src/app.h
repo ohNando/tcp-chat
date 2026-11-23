@@ -27,6 +27,7 @@ private:
     void drawChatScreen();
     void drawMessages(float height);
     void drawInput();
+    void drawUsers(float height);
     void submitInput();
     void drawTrustPrompt();
     void drawIdentityWarning();

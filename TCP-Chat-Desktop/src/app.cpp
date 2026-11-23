@@ -1,6 +1,7 @@
 #include "app.h"
 
 #include <cstdio>
+#include <algorithm>
 #include <cstring>
 
 #include "imgui.h"
@@ -87,9 +88,39 @@ void App::drawConnectScreen() {
 }
 
 void App::drawChatScreen() {
+    const float users_w = 200.0f;
     const float input_h = ImGui::GetFrameHeightWithSpacing() + 6.0f;
-    drawMessages(ImGui::GetContentRegionAvail().y - input_h);
+    const float body_h = ImGui::GetContentRegionAvail().y - input_h;
+    const float spacing = ImGui::GetStyle().ItemSpacing.x;
+
+    ImGui::BeginGroup();
+    {
+        ImGui::BeginChild("left", ImVec2(ImGui::GetContentRegionAvail().x - users_w - spacing, body_h));
+        drawMessages(ImGui::GetContentRegionAvail().y);
+        ImGui::EndChild();
+    }
+    ImGui::EndGroup();
+    ImGui::SameLine();
+    drawUsers(body_h);
     drawInput();
+}
+
+void App::drawUsers(float height) {
+    ImGui::BeginChild("users", ImVec2(0, height), ImGuiChildFlags_Borders);
+    std::vector<std::string> users = client_.users();
+    std::sort(users.begin(), users.end());
+
+    ImGui::TextDisabled("ONLINE - %zu", users.size());
+    ImGui::Separator();
+    for (const std::string& u : users) {
+        ImGui::TextColored(ImVec4(0.35f, 0.85f, 0.45f, 1.0f), "*");
+        ImGui::SameLine();
+        if (u == client_.name())
+            ImGui::Text("%s (you)", u.c_str());
+        else
+            ImGui::TextUnformatted(u.c_str());
+    }
+    ImGui::EndChild();
 }
 
 void App::drawMessages(float height) {
