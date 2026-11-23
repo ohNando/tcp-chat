@@ -275,8 +275,24 @@ static void update_conn(conn_t* c) {
     }
 }
 
+/* Connections that never finish the handshake would otherwise hold a slot
+ * forever (a cheap way to fill the server). */
+static void expire_handshakes(void) {
+    uint64_t now = now_ms();
+    for (size_t i = 0; i < room.max; i++) {
+        conn_t* c = room.slots[i];
+        if (c && !c->want_close && !secure_established(&c->sec) &&
+            c->sec.state != SECURE_PEER_FINISHED &&
+            now - c->created_ms > SERVER_HANDSHAKE_TIMEOUT_MS) {
+            log_info("conn %d (%s): handshake timed out", c->id, c->peer);
+            c->want_close = 1;
+        }
+    }
+}
+
 static void sweep(void) {
     int again;
+    expire_handshakes();
     do {
         again = 0;
         for (size_t i = 0; i < room.max; i++) {
@@ -333,7 +349,8 @@ static void run(void) {
     struct epoll_event events[SERVER_MAX_EVENTS];
 
     while (running) {
-        int n = epoll_wait(epfd, events, SERVER_MAX_EVENTS, -1);
+        /* Wake up at least once a second to expire stale handshakes. */
+        int n = epoll_wait(epfd, events, SERVER_MAX_EVENTS, 1000);
         if (n < 0) {
             if (errno == EINTR) continue;
             log_info("epoll_wait failed: %s", strerror(errno));

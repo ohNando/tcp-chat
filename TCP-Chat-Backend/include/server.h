@@ -24,5 +24,6 @@
 #define SERVER_MAX_EVENTS          64
 #define SERVER_LISTEN_BACKLOG      128
 #define SERVER_SPARE_SLOTS         8
+#define SERVER_HANDSHAKE_TIMEOUT_MS 10000
 
 #endif
