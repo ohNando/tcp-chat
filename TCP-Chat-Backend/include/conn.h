@@ -30,7 +30,8 @@
 /* Everything registered in epoll starts with a source_t, so the event
  * loop can tell what kind of object `data.ptr` points to. */
 typedef enum {
-    SRC_LISTENER = 1,
+    SRC_LISTENER = 1,     /* raw TCP clients */
+    SRC_WS_LISTENER,      /* HTTP / WebSocket clients */
     SRC_SIGNAL,
     SRC_CONN,
 } source_kind_t;
@@ -40,10 +41,18 @@ typedef struct {
     int fd;
 } source_t;
 
+/* How records travel on this connection. */
+typedef enum {
+    TRANSPORT_TCP,   /* u32 length prefix + body */
+    TRANSPORT_HTTP,  /* waiting for an HTTP request (upgrade or file) */
+    TRANSPORT_WS,    /* one WebSocket binary message per record */
+} transport_t;
+
 typedef struct conn {
     source_t src;                 /* must stay the first member */
     int id;
     char peer[32];                /* "ip:port" for logs */
+    transport_t transport;
 
     framer_t in;
 
@@ -67,14 +76,15 @@ typedef struct conn {
 /* Creates a server-side connection whose secure channel waits for a
  * CLIENT_HELLO signed off by `identity`. */
 conn_t* conn_create(int fd, int id, const struct sockaddr_in* addr,
-                    const identity_t* identity);
+                    const identity_t* identity, transport_t transport);
 /* Frees memory only; closing the fd is the caller's job. */
 void conn_destroy(conn_t* c);
 
 /* Appends raw bytes to the output buffer. -1 if over CONN_OUT_MAX. */
 int conn_queue(conn_t* c, const void* data, size_t n);
 
-/* Queues one record: 4-byte length prefix + body. */
+/* Queues one record framed for the transport: a 4-byte length prefix on
+ * TCP, a binary frame on WebSocket. */
 int conn_queue_record(conn_t* c, const uint8_t* body, size_t len);
 
 /* Encodes `m`, encrypts it and queues the record.

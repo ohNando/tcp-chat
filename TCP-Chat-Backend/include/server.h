@@ -20,6 +20,7 @@
 #include "room.h"
 
 #define SERVER_DEFAULT_PORT        8080
+#define SERVER_DEFAULT_WS_PORT     8081
 #define SERVER_DEFAULT_MAX_CLIENTS 64
 #define SERVER_MAX_EVENTS          64
 #define SERVER_LISTEN_BACKLOG      128

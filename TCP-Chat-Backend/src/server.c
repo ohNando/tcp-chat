@@ -5,6 +5,8 @@
 #include "network.h"
 #include "utility.h"
 #include "validate.h"
+#include "http.h"
+#include "ws.h"
 
 #include <sodium.h>
 
@@ -16,6 +18,7 @@
 
 static int epfd = -1;
 static source_t listener = { SRC_LISTENER, -1 };
+static source_t ws_listener = { SRC_WS_LISTENER, -1 };
 static source_t sigsrc = { SRC_SIGNAL, -1 };
 static int running = 1;
 static identity_t identity;
@@ -173,6 +176,60 @@ static void process_record(conn_t* c, const uint8_t* body, size_t len) {
     if (c->sec.state == SECURE_PEER_FINISHED) c->close_after_flush = 1;
 }
 
+/* ---------------------------------------------------------------- */
+/* HTTP and WebSocket                                                */
+/* ---------------------------------------------------------------- */
+
+static void http_error(conn_t* c, int status, const char* reason) {
+    char resp[512];
+    int n = snprintf(resp, sizeof(resp),
+                     "HTTP/1.1 %d %s\r\n"
+                     "Content-Type: text/plain; charset=utf-8\r\n"
+                     "Content-Length: %zu\r\n"
+                     "Connection: close\r\n"
+                     "\r\n%s\n",
+                     status, reason, strlen(reason) + 1, reason);
+    conn_queue(c, resp, (size_t)n);
+    c->close_after_flush = 1;
+}
+
+/* Handles the first (and only) HTTP request on a connection. */
+static void handle_http(conn_t* c) {
+    static http_request_t req;
+    size_t len;
+    uint8_t* data = framer_peek(&c->in, &len);
+
+    int n = http_parse_request(data, len, &req);
+    if (n == 0) return;
+    if (n < 0) {
+        http_error(c, 400, "Bad Request");
+        return;
+    }
+    framer_consume(&c->in, (size_t)n);
+
+    char accept[WS_ACCEPT_SIZE];
+    if (ws_check_upgrade(&req, accept) == 0) {
+        char resp[256];
+        int rn = ws_upgrade_response(resp, sizeof(resp), accept);
+        conn_queue(c, resp, (size_t)rn);
+        c->transport = TRANSPORT_WS;
+        log_info("conn %d (%s): websocket upgrade", c->id, c->peer);
+        return;
+    }
+
+    if (http_header(&req, "Upgrade"))
+        http_error(c, 400, "Bad WebSocket Upgrade");
+    else
+        http_error(c, 404, "Not Found");
+}
+
+static void handle_ws(conn_t* c) {
+    /* Frames are handled in a later step; drop input for now. */
+    size_t len;
+    framer_peek(&c->in, &len);
+    framer_consume(&c->in, len);
+}
+
 static void handle_readable(conn_t* c) {
     size_t avail;
     uint8_t* space = framer_space(&c->in, &avail);
@@ -193,6 +250,16 @@ static void handle_readable(conn_t* c) {
     }
     framer_commit(&c->in, (size_t)n);
 
+    if (c->transport == TRANSPORT_HTTP) {
+        handle_http(c);
+        if (c->transport != TRANSPORT_WS) return;
+        /* Bytes after the upgrade request are already WebSocket frames. */
+    }
+    if (c->transport == TRANSPORT_WS) {
+        handle_ws(c);
+        return;
+    }
+
     const uint8_t* body;
     size_t len;
     int r;
@@ -202,11 +269,13 @@ static void handle_readable(conn_t* c) {
     if (r < 0) protocol_error(c, "Record too large.");
 }
 
-static void accept_clients(void) {
+static void accept_clients(const source_t* l) {
+    transport_t transport = l->kind == SRC_WS_LISTENER ? TRANSPORT_HTTP : TRANSPORT_TCP;
+
     for (;;) {
         struct sockaddr_in addr;
         socklen_t len = sizeof(addr);
-        int fd = accept4(listener.fd, (SA*)&addr, &len, SOCK_NONBLOCK | SOCK_CLOEXEC);
+        int fd = accept4(l->fd, (SA*)&addr, &len, SOCK_NONBLOCK | SOCK_CLOEXEC);
         if (fd < 0) {
             if (errno == EINTR) continue;
             if (errno != EAGAIN && errno != EWOULDBLOCK)
@@ -214,7 +283,7 @@ static void accept_clients(void) {
             return;
         }
 
-        conn_t* c = conn_create(fd, next_conn_id++, &addr, &identity);
+        conn_t* c = conn_create(fd, next_conn_id++, &addr, &identity, transport);
         if (!c) {
             close(fd);
             continue;
@@ -238,7 +307,8 @@ static void accept_clients(void) {
             continue;
         }
 
-        log_info("conn %d connected from %s", c->id, c->peer);
+        log_info("conn %d connected from %s%s", c->id, c->peer,
+                 transport == TRANSPORT_HTTP ? " (http)" : "");
     }
 }
 
@@ -368,7 +438,8 @@ static void run(void) {
             source_t* src = events[i].data.ptr;
             switch (src->kind) {
                 case SRC_LISTENER:
-                    accept_clients();
+                case SRC_WS_LISTENER:
+                    accept_clients(src);
                     break;
                 case SRC_SIGNAL:
                     handle_signal();
@@ -391,11 +462,12 @@ static void run(void) {
 
 static void usage(const char* prog) {
     fprintf(stderr,
-            "Usage: %s [-p port] [-m max_clients] [-k key_file]\n"
+            "Usage: %s [-p port] [-w ws_port] [-m max_clients] [-k key_file]\n"
             "  -p  TCP port to listen on (default %d)\n"
+            "  -w  HTTP/WebSocket port, 0 to disable (default %d)\n"
             "  -m  maximum simultaneous clients, 1-%d (default %d)\n"
             "  -k  server identity key, created if missing (default %s)\n",
-            prog, SERVER_DEFAULT_PORT, USERS_MAX, SERVER_DEFAULT_MAX_CLIENTS,
+            prog, SERVER_DEFAULT_PORT, SERVER_DEFAULT_WS_PORT, USERS_MAX, SERVER_DEFAULT_MAX_CLIENTS,
             IDENTITY_DEFAULT_PATH);
 }
 
@@ -410,11 +482,12 @@ static long parse_int(const char* s, long min, long max) {
 
 int main(int argc, char** argv) {
     int port = SERVER_DEFAULT_PORT;
+    int ws_port = SERVER_DEFAULT_WS_PORT;
     int max_clients = SERVER_DEFAULT_MAX_CLIENTS;
     const char* key_path = IDENTITY_DEFAULT_PATH;
     int opt;
 
-    while ((opt = getopt(argc, argv, "p:m:k:h")) != -1) {
+    while ((opt = getopt(argc, argv, "p:w:m:k:h")) != -1) {
         long v;
         switch (opt) {
             case 'p':
@@ -431,6 +504,13 @@ int main(int argc, char** argv) {
                     return 1;
                 }
                 max_clients = (int)v;
+                break;
+            case 'w':
+                if ((v = parse_int(optarg, 0, 65535)) < 0) {
+                    fprintf(stderr, "invalid websocket port: %s\n", optarg);
+                    return 1;
+                }
+                ws_port = (int)v;
                 break;
             case 'k':
                 key_path = optarg;
@@ -483,6 +563,20 @@ int main(int argc, char** argv) {
         return 1;
     }
 
+    if (ws_port > 0) {
+        ws_listener.fd = net_listen(ws_port, SERVER_LISTEN_BACKLOG);
+        if (ws_listener.fd < 0) {
+            perror("listen (websocket)");
+            return 1;
+        }
+        struct epoll_event wev = { .events = EPOLLIN, .data.ptr = &ws_listener };
+        if (epoll_ctl(epfd, EPOLL_CTL_ADD, ws_listener.fd, &wev) < 0) {
+            perror("epoll_ctl");
+            return 1;
+        }
+        log_info("http/websocket on port %d", ws_port);
+    }
+
     if (setup_signals() < 0) {
         perror("signalfd");
         return 1;
@@ -495,6 +589,7 @@ int main(int argc, char** argv) {
     close(sigsrc.fd);
     close(epfd);
     close(listener.fd);
+    if (ws_listener.fd >= 0) close(ws_listener.fd);
     room_free(&room);
     identity_wipe(&identity);
     return 0;

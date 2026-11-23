@@ -4,7 +4,7 @@
 
 /* Room logic only touches the output buffer, so no sockets are needed. */
 static conn_t* member(int id, const char* name) {
-    conn_t* c = conn_create(-1, id, NULL, &test_identity);
+    conn_t* c = conn_create(-1, id, NULL, &test_identity, TRANSPORT_TCP);
     establish(c);
     if (name) {
         strcpy(c->name, name);

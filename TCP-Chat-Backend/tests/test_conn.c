@@ -13,7 +13,7 @@ static conn_t* make_pair(int* peer) {
     if (socketpair(AF_UNIX, SOCK_STREAM, 0, sv) < 0) return NULL;
     net_set_nonblocking(sv[0]);
     *peer = sv[1];
-    return conn_create(sv[0], 1, NULL, &test_identity);
+    return conn_create(sv[0], 1, NULL, &test_identity, TRANSPORT_TCP);
 }
 
 static void close_pair(conn_t* c, int peer) {
