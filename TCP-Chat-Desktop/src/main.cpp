@@ -130,7 +130,12 @@ int main(int argc, char** argv) {
     const double screenshot_at = glfwGetTime() + wait;
 
     while (!glfwWindowShouldClose(window)) {
-        glfwPollEvents();
+        // Idle: sleep until input arrives, waking every 50 ms to check the
+        // socket, instead of redrawing at full frame rate. Keeps CPU near 0.
+        if (screenshot)
+            glfwPollEvents();
+        else
+            glfwWaitEventsTimeout(0.05);
         app.poll();
 
         ImGui_ImplOpenGL3_NewFrame();
