@@ -37,6 +37,32 @@ static void protocol_error(conn_t* c, const char* why) {
 /* Message handlers                                                  */
 /* ---------------------------------------------------------------- */
 
+static void handle_name(conn_t* c, const message_t* in) {
+    if (c->registered) {
+        send_error(c, ERR_ALREADY_REGISTERED, "You already have a name.");
+        return;
+    }
+    if (!name_valid(in->name)) {
+        send_error(c, ERR_NAME_INVALID,
+                   "Name must be 2-24 characters: letters, digits, '_', '-' or '.'.");
+        return;
+    }
+
+    memcpy(c->name, in->name, sizeof(c->name));
+    c->registered = 1;
+    log_info("conn %d registered as '%s'", c->id, c->name);
+
+    message_t m;
+    message_init(&m, FT_WELCOME);
+    snprintf(m.text, sizeof(m.text), "Welcome, %s! %zu user(s) online.",
+             c->name, room_member_count(&room));
+    room_send_to(c, &m);
+
+    message_init(&m, FT_JOIN);
+    memcpy(m.name, c->name, sizeof(m.name));
+    room_broadcast(&room, &m, c);
+}
+
 static void handle_chat(conn_t* c, const message_t* in) {
     if (!text_valid(in->text)) {
         send_error(c, ERR_TEXT_INVALID, "Message is empty, too long or has control characters.");
@@ -57,7 +83,16 @@ static void handle_chat(conn_t* c, const message_t* in) {
 static void handle_message(conn_t* c, const message_t* m) {
     message_t reply;
 
+    /* Before NAME only a few frames make sense. */
+    if (!c->registered && m->type != FT_NAME && m->type != FT_PING && m->type != FT_QUIT) {
+        send_error(c, ERR_NOT_REGISTERED, "Send your name first.");
+        return;
+    }
+
     switch (m->type) {
+        case FT_NAME:
+            handle_name(c, m);
+            break;
         case FT_MSG:
             handle_chat(c, m);
             break;
@@ -156,9 +191,6 @@ static void accept_clients(void) {
             continue;
         }
 
-        /* Temporary until NAME registration exists. */
-        snprintf(c->name, sizeof(c->name), "guest-%d", c->id);
-        c->registered = 1;
         log_info("conn %d connected from %s", c->id, c->peer);
     }
 }
@@ -172,6 +204,13 @@ static void close_conn(conn_t* c) {
     close(c->src.fd);
     room_remove(&room, c);
     log_info("conn %d (%s) closed", c->id, c->peer);
+
+    if (c->registered) {
+        message_t m;
+        message_init(&m, FT_LEAVE);
+        memcpy(m.name, c->name, sizeof(m.name));
+        room_broadcast(&room, &m, NULL);
+    }
     conn_destroy(c);
 }
 
