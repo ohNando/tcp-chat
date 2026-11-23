@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import sodiumModule from 'libsodium-wrappers'
 
 import { FT, encodeMessage, decodeMessage } from '../protocol/frame.js'
 import { SecureChannel, fingerprint } from '../protocol/secure.js'
@@ -95,9 +94,11 @@ export function useChat() {
     }
 
     const connect = async () => {
-      await sodiumModule.ready
+      // libsodium is large (~500 KB): load it in its own chunk so the page
+      // renders before the crypto code has arrived.
+      const sodium = (await import('libsodium-wrappers')).default
+      await sodium.ready
       if (cancelled) return
-      const sodium = sodiumModule
 
       const ws = new WebSocket(wsUrl())
       ws.binaryType = 'arraybuffer'
