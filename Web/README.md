@@ -1,16 +1,71 @@
-# React + Vite
+# Web client
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A React (Vite) chat client that runs in the browser and talks to the C
+server over WebSocket, with the same end-to-end encrypted protocol as the
+terminal and desktop clients (libsodium compiled to WebAssembly).
 
-Currently, two official plugins are available:
+## Requirements
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+- Node.js 22 or newer
+- A running server from [`Backend`](../Backend)
 
-## React Compiler
+## Install
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+```bash
+npm install
+```
 
-## Expanding the ESLint configuration
+## Use it
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+**Served by the C server** (recommended):
+
+```bash
+npm run build                    # writes dist/
+cd ../Backend && make run-server # serves dist/ on port 8081
+```
+
+Open <http://localhost:8081>.
+
+**Development with hot reload:**
+
+```bash
+cd ../Backend && make run-server # in one terminal
+npm run dev                      # in another
+```
+
+Open <http://localhost:5173>. Vite proxies `/ws` to the server on port 8081.
+
+## Scripts
+
+| Script | |
+|---|---|
+| `npm run dev` | Vite dev server |
+| `npm run build` | production build in `dist/` |
+| `npm run lint` | ESLint |
+| `npm test` | unit tests (`node --test`) for the codec and pinning |
+| `npm run e2e` | starts `../Backend/bin/server` and chats over TCP and WebSocket |
+
+`npm run e2e` needs the server binary: run `make` in `Backend` first.
+
+## How it works
+
+| File | |
+|---|---|
+| `src/protocol/frame.js` | binary frame and message codec, mirror of `Backend/src/message.c` |
+| `src/protocol/secure.js` | handshake and encrypted record layer, mirror of `Backend/src/secure.c` |
+| `src/protocol/pins.js` | remembers the server fingerprint in `localStorage` |
+| `src/hooks/useChat.js` | WebSocket connection, reconnect with backoff, chat state |
+| `src/App.jsx` | login, chat, online users and the "identity changed" warning |
+
+The server is the single source of truth: your own messages appear when the
+server broadcasts them back, so every client shows the same order.
+
+On the first connection the server's fingerprint is saved for that host. If
+it ever changes, the app refuses to connect and shows the old and new
+fingerprints side by side. Compare them with the one the server prints at
+start-up before choosing to trust the new key.
+
+> The page itself is served over plain HTTP. That is fine on `localhost`,
+> but over a network someone in the middle could modify the JavaScript
+> before it reaches the browser. Serve it over HTTPS (for example behind a
+> reverse proxy) for anything beyond local use.
