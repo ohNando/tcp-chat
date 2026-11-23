@@ -154,6 +154,58 @@ TEST(final_record_ends_stream) {
     CHECK_EQ_INT(srv.state, SECURE_PEER_FINISHED);
 }
 
+TEST(invalid_signature_is_rejected) {
+    uint8_t* rec; size_t len, n;
+    reset();
+    pop(&to_server, &rec, &len);
+    secure_recv(&srv, rec, len, out, sizeof(out), &n);   /* server answers */
+
+    pop(&to_client, &rec, &len);                         /* SERVER_HELLO */
+    rec[len - 1] ^= 0x80;                                /* flip a signature bit */
+    CHECK_EQ_INT(secure_recv(&cli, rec, len, out, sizeof(out), &n), SECURE_ERR);
+    CHECK_EQ_STR(cli.error, "invalid server signature");
+}
+
+TEST(swapped_ephemeral_key_is_rejected) {
+    uint8_t* rec; size_t len, n;
+    reset();
+    pop(&to_server, &rec, &len);
+    secure_recv(&srv, rec, len, out, sizeof(out), &n);
+
+    pop(&to_client, &rec, &len);
+    /* A man in the middle replaces the server's ephemeral key with his own. */
+    randombytes_buf(rec + HS_MAGIC_LEN + 1, HS_KX_PK_BYTES);
+    CHECK_EQ_INT(secure_recv(&cli, rec, len, out, sizeof(out), &n), SECURE_ERR);
+}
+
+TEST(impostor_server_fails_pin_check) {
+    identity_t impostor;
+    unsigned char seed[crypto_sign_SEEDBYTES];
+    randombytes_buf(seed, sizeof(seed));
+    crypto_sign_seed_keypair(impostor.pk, impostor.sk, seed);
+
+    reset();
+    memcpy(pinned, server_id.pk, sizeof(pinned));
+    pin_enabled = 1;
+    /* Same protocol, valid signature, but a different identity key. */
+    secure_server_init(&srv, &impostor, emit_q, &to_client);
+    CHECK_EQ_INT(pump(), -1);
+    CHECK_EQ_STR(cli.error, "server identity not trusted");
+
+    reset();
+    memcpy(pinned, server_id.pk, sizeof(pinned));
+    pin_enabled = 1;
+    CHECK_EQ_INT(pump(), 0);
+    CHECK(secure_established(&cli));
+}
+
+TEST(garbage_hello_is_rejected) {
+    size_t n;
+    reset();
+    CHECK_EQ_INT(secure_recv(&srv, (const uint8_t*)"GET / HTTP/1.1", 14, out, sizeof(out), &n),
+                 SECURE_ERR);
+}
+
 int main(void) {
     if (sodium_init() < 0) return 1;
     unsigned char seed[crypto_sign_SEEDBYTES];
@@ -167,5 +219,9 @@ int main(void) {
     RUN(replayed_record_is_rejected);
     RUN(reordered_records_are_rejected);
     RUN(final_record_ends_stream);
+    RUN(invalid_signature_is_rejected);
+    RUN(swapped_ephemeral_key_is_rejected);
+    RUN(impostor_server_fails_pin_check);
+    RUN(garbage_hello_is_rejected);
     return TEST_REPORT();
 }
