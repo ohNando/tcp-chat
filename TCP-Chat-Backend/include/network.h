@@ -4,8 +4,6 @@
 #include "utility.h"
 
 int connectToServer(const char*, int);
-int start_listening(int);
-
 /* Puts the descriptor into O_NONBLOCK mode. Returns 0 or -1. */
 int net_set_nonblocking(int fd);
 

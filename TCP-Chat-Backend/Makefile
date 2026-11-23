@@ -48,7 +48,7 @@ $(SERVER_BIN): $(SERVER_OBJ) | $(BIN_DIR)
 	$(CC) -o $@ $^ $(LDLIBS)
 
 $(CLIENT_BIN): $(CLIENT_OBJ) | $(BIN_DIR)
-	$(CC) -o $@ $^ $(LDLIBS) -lpthread
+	$(CC) -o $@ $^ $(LDLIBS)
 
 $(TEST_BIN_DIR)/%: $(TEST_DIR)/%.c $(MODULE_OBJ) | $(TEST_BIN_DIR)
 	$(CC) $(CFLAGS) -I./$(TEST_DIR) -o $@ $< $(MODULE_OBJ) $(LDLIBS)

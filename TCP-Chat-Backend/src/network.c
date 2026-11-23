@@ -32,37 +32,6 @@ int connectToServer(const char* serverIP, int port){
     return new_sockfd;
 }
 
-int start_listening(int iPort){
-    int listen_sockfd;
-    struct sockaddr_in server_addr;
-
-    listen_sockfd = socket(AF_INET, SOCK_STREAM, 0);
-    if(listen_sockfd == -1){ error("(-)| Socket creating failed!");}
-    printf("(+)| Socket created successfully!\n");
-
-    memset(&server_addr, 0, sizeof(server_addr));
-    server_addr.sin_family = AF_INET;
-    server_addr.sin_addr.s_addr = htonl(INADDR_ANY);
-    server_addr.sin_port = htons(iPort);
-
-    int optval = 1;
-    setsockopt(listen_sockfd, SOL_SOCKET, SO_REUSEADDR, &optval, sizeof(optval));
-
-    if(bind(listen_sockfd, (SA*)&server_addr, sizeof(server_addr)) != 0){
-        close(listen_sockfd);
-        error("(-)| Socket bind failed...");
-    }
-    printf("(+)| Socket successfully binded to port :%d...\n",iPort);
-
-    if(listen(listen_sockfd, MAX_CLIENT) != 0){
-        close(listen_sockfd);
-        error("(-)| Listen failed...");
-    }
-
-    printf("(+)| Listening on port %d\n", iPort);
-    return listen_sockfd;
-}
-
 int net_set_nonblocking(int fd){
     int flags = fcntl(fd, F_GETFL, 0);
     if(flags < 0) return -1;

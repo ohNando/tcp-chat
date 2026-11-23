@@ -5,7 +5,6 @@
 
 //For both client and server
 
-void error(const char*);
 void printToConsole(const char*,int);
 
 /* printf-style log line with a HH:MM:SS timestamp, to stdout. */
