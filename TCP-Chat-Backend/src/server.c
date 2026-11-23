@@ -412,6 +412,10 @@ int main(int argc, char** argv) {
     if (identity_load_or_create(&identity, key_path, &created) < 0) return 1;
     if (created) log_info("generated new identity key in %s", key_path);
 
+    char fp[FINGERPRINT_STR_LEN];
+    identity_fingerprint(identity.pk, fp);
+    log_info("server fingerprint: %s", fp);
+
     if (room_init(&room, (size_t)max_clients) < 0) {
         fprintf(stderr, "out of memory\n");
         return 1;
