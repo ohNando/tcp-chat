@@ -1,5 +1,6 @@
 #include "client.h"
 #include "framer.h"
+#include "known_servers.h"
 #include "message.h"
 #include "network.h"
 #include "secure.h"
@@ -100,6 +101,51 @@ static int emit_record(void* ctx, const uint8_t* body, size_t len) {
     record_put_header(hdr, (uint32_t)len);
     if (send_all(hdr, sizeof(hdr)) < 0) return -1;
     return send_all(body, len);
+}
+
+/* secure_t verify callback: trust on first use, refuse changed keys. */
+static int verify_server(void* ctx, const unsigned char pk[IDENTITY_PK_BYTES]) {
+    const char* hostport = ctx;
+    char path[KNOWN_PATH_MAX];
+    char fp[FINGERPRINT_STR_LEN];
+    unsigned char pinned[IDENTITY_PK_BYTES];
+
+    identity_fingerprint(pk, fp);
+    if (known_servers_path(path, sizeof(path)) < 0) {
+        show("%s! Cannot locate known_servers file (is HOME set?).%s", C_ERROR, C_RESET);
+        return -1;
+    }
+
+    int found = known_servers_lookup(path, hostport, pinned);
+    if (found < 0) {
+        show("%s! Cannot read %s: %s%s", C_ERROR, path, strerror(errno), C_RESET);
+        return -1;
+    }
+
+    if (found == 0) {
+        if (known_servers_add(path, hostport, pk) < 0) {
+            show("%s! Cannot write %s: %s%s", C_ERROR, path, strerror(errno), C_RESET);
+            return -1;
+        }
+        show("%s* New server %s\n* Fingerprint: %s\n* Saved to %s%s",
+             C_INFO, hostport, fp, path, C_RESET);
+        return 0;
+    }
+
+    if (sodium_memcmp(pinned, pk, IDENTITY_PK_BYTES) == 0) return 0;
+
+    char old_fp[FINGERPRINT_STR_LEN];
+    identity_fingerprint(pinned, old_fp);
+    show("%s"
+         "!!! WARNING: SERVER IDENTITY HAS CHANGED !!!\n"
+         "! Someone may be intercepting this connection, or the server was\n"
+         "! reinstalled with a new key. Connection refused.\n"
+         "! Expected: %s\n"
+         "! Received: %s\n"
+         "! If the change is legitimate, remove the line for %s from\n"
+         "! %s%s",
+         C_ERROR, old_fp, fp, hostport, path, C_RESET);
+    return -1;
 }
 
 /* Encodes, encrypts and sends. `final` ends our side of the stream. */
@@ -325,7 +371,9 @@ int main(int argc, char** argv) {
     sockfd = connectToServer(host, port);
     if (sockfd < 0) return 1;
     if (framer_init(&in, RECORD_MAX_BODY) < 0) return 1;
-    if (secure_client_init(&sec, NULL, emit_record, NULL) < 0) {
+    static char hostport[300];
+    snprintf(hostport, sizeof(hostport), "%s:%d", host, port);
+    if (secure_client_init(&sec, verify_server, emit_record, hostport) < 0) {
         fprintf(stderr, "(-)| Cannot start handshake.\n");
         return 1;
     }
