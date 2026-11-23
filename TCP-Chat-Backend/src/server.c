@@ -141,6 +141,38 @@ static void handle_message(conn_t* c, const message_t* m) {
 /* Socket events                                                     */
 /* ---------------------------------------------------------------- */
 
+/* One record from the transport (TCP length-prefixed record or one
+ * WebSocket binary message): run it through the secure channel and, once
+ * established, decode and handle the frame inside. */
+static void process_record(conn_t* c, const uint8_t* body, size_t len) {
+    static uint8_t plain[RECORD_MAX_BODY];
+    static message_t m;
+    size_t plen;
+
+    int was_established = secure_established(&c->sec);
+    int s = secure_recv(&c->sec, body, len, plain, sizeof(plain), &plen);
+
+    if (s == SECURE_ERR) {
+        /* No error reply: the channel itself is broken or untrusted. */
+        log_info("conn %d (%s): secure channel error: %s", c->id, c->peer,
+                 c->sec.error ? c->sec.error : "unknown");
+        c->want_close = 1;
+        return;
+    }
+    if (s == SECURE_NONE) {
+        if (!was_established && secure_established(&c->sec))
+            log_info("conn %d (%s): handshake complete", c->id, c->peer);
+        return;
+    }
+
+    if (message_decode(plain, plen, &m, NULL) < 0) {
+        protocol_error(c, "Malformed frame.");
+        return;
+    }
+    handle_message(c, &m);
+    if (c->sec.state == SECURE_PEER_FINISHED) c->close_after_flush = 1;
+}
+
 static void handle_readable(conn_t* c) {
     size_t avail;
     uint8_t* space = framer_space(&c->in, &avail);
@@ -164,34 +196,9 @@ static void handle_readable(conn_t* c) {
     const uint8_t* body;
     size_t len;
     int r;
-    static uint8_t plain[RECORD_MAX_BODY];
-    static message_t m;
-
-    while (!c->close_after_flush && (r = framer_next(&c->in, &body, &len)) == 1) {
-        size_t plen;
-        int was_established = secure_established(&c->sec);
-        int s = secure_recv(&c->sec, body, len, plain, sizeof(plain), &plen);
-
-        if (s == SECURE_ERR) {
-            /* No error reply: the channel itself is broken or untrusted. */
-            log_info("conn %d (%s): secure channel error: %s", c->id, c->peer,
-                     c->sec.error ? c->sec.error : "unknown");
-            c->want_close = 1;
-            return;
-        }
-        if (s == SECURE_NONE) {
-            if (!was_established && secure_established(&c->sec))
-                log_info("conn %d (%s): handshake complete", c->id, c->peer);
-            continue;
-        }
-
-        if (message_decode(plain, plen, &m, NULL) < 0) {
-            protocol_error(c, "Malformed frame.");
-            return;
-        }
-        handle_message(c, &m);
-        if (c->sec.state == SECURE_PEER_FINISHED) c->close_after_flush = 1;
-    }
+    while (!c->close_after_flush && !c->want_close &&
+           (r = framer_next(&c->in, &body, &len)) == 1)
+        process_record(c, body, len);
     if (r < 0) protocol_error(c, "Record too large.");
 }
 
