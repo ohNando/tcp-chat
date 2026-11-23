@@ -18,6 +18,7 @@ static uint32_t tx_seq = 0;
 static char line_buf[CLIENT_LINE_MAX];
 static size_t line_len = 0;
 static int line_overflow = 0;
+static int stdin_eof = 0;
 
 /* ---------------------------------------------------------------- */
 /* Output                                                            */
@@ -106,6 +107,7 @@ static void handle_server_message(message_t* m) {
             break;
         }
         case FT_ERR:
+            if (state == CLIENT_REGISTERING) state = CLIENT_NAMING;
             show("! %s", m->text);
             break;
         default:
@@ -119,7 +121,10 @@ static int handle_socket(void) {
     uint8_t* space = framer_space(&in, &avail);
     ssize_t n = recv(sockfd, space, avail, 0);
     if (n == 0) {
-        show("! Server closed the connection.");
+        if (state == CLIENT_QUITTING)
+            printToConsole("* Bye!\n", 0);
+        else
+            show("! Server closed the connection.");
         return -1;
     }
     if (n < 0) {
@@ -166,7 +171,28 @@ static int handle_line(const char* line) {
         }
         message_init(&m, FT_NAME);
         strcpy(m.name, line);
+        state = CLIENT_REGISTERING;
         return send_message(&m);
+    }
+
+    if (line[0] == '/') {
+        if (strcmp(line, "/quit") == 0 || strcmp(line, "/exit") == 0) {
+            message_init(&m, FT_QUIT);
+            state = CLIENT_QUITTING;
+            return send_message(&m); /* server closes, recv() then sees EOF */
+        }
+        if (strcmp(line, "/users") == 0) {
+            message_init(&m, FT_USERS_REQ);
+            return send_message(&m);
+        }
+        if (strcmp(line, "/help") == 0) {
+            show("* Commands: /users  list online users\n"
+                 "*           /quit   leave the chat\n"
+                 "*           /help   show this help");
+            return 0;
+        }
+        show("! Unknown command '%s'. Type /help.", line);
+        return 0;
     }
 
     if (strlen(line) > TEXT_MAX_LEN) {
@@ -180,14 +206,13 @@ static int handle_line(const char* line) {
     return 0;
 }
 
-/* Returns -1 to quit. */
-static int handle_stdin(void) {
-    ssize_t n = read(STDIN_FILENO, line_buf + line_len, sizeof(line_buf) - line_len);
-    if (n <= 0) return -1; /* EOF (Ctrl+D) or error */
-    line_len += (size_t)n;
-
+/* Handles buffered complete lines. While a NAME is in flight, lines wait
+ * in the buffer: otherwise text typed (or pasted) quickly would be sent
+ * as another NAME before the server's answer arrives. */
+static int process_lines(void) {
     char* nl;
-    while ((nl = memchr(line_buf, '\n', line_len)) != NULL) {
+    while (state != CLIENT_REGISTERING && state != CLIENT_QUITTING &&
+           (nl = memchr(line_buf, '\n', line_len)) != NULL) {
         *nl = '\0';
         if (nl > line_buf && nl[-1] == '\r') nl[-1] = '\0';
 
@@ -201,7 +226,20 @@ static int handle_stdin(void) {
         line_len -= used;
     }
 
-    if (line_len == sizeof(line_buf)) {
+    return 0;
+}
+
+/* Returns -1 to quit. */
+static int handle_stdin(void) {
+    ssize_t n = read(STDIN_FILENO, line_buf + line_len, sizeof(line_buf) - line_len);
+    if (n <= 0) {
+        stdin_eof = 1; /* Ctrl+D or closed pipe; finish pending lines first */
+        return 0;
+    }
+    line_len += (size_t)n;
+    if (process_lines() < 0) return -1;
+
+    if (line_len == sizeof(line_buf) && state != CLIENT_REGISTERING) {
         show("! Line too long, ignored.");
         line_overflow = 1;
         line_len = 0;
@@ -227,6 +265,10 @@ int main(int argc, char** argv) {
     };
 
     for (;;) {
+        /* Negative fd: poll() ignores it. */
+        fds[0].fd = stdin_eof ? -1 : STDIN_FILENO;
+        fds[0].events = state == CLIENT_REGISTERING ? 0 : POLLIN;
+
         if (poll(fds, 2, -1) < 0) {
             if (errno == EINTR) continue;
             perror("poll");
@@ -234,10 +276,14 @@ int main(int argc, char** argv) {
         }
         if (fds[1].revents & (POLLIN | POLLHUP | POLLERR)) {
             if (handle_socket() < 0) break;
+            if (process_lines() < 0) break; /* state may have changed */
         }
         if (fds[0].revents & (POLLIN | POLLHUP)) {
             if (handle_stdin() < 0) break;
         }
+        if (stdin_eof && state != CLIENT_REGISTERING && state != CLIENT_QUITTING &&
+            !memchr(line_buf, '\n', line_len))
+            break;
     }
 
     printf("\n");

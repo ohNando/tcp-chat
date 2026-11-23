@@ -15,7 +15,8 @@
 #define CLIENT_LINE_MAX     4096
 
 typedef enum {
-    CLIENT_NAMING,
+    CLIENT_NAMING,       /* waiting for the user to type a name */
+    CLIENT_REGISTERING,  /* NAME sent, waiting for WELCOME or ERR */
     CLIENT_CHATTING,
     CLIENT_QUITTING,
 } client_state_t;
