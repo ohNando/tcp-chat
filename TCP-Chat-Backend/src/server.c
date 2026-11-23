@@ -7,10 +7,13 @@
 
 #include <signal.h>
 #include <sys/epoll.h>
+#include <sys/signalfd.h>
 #include <time.h>
 
 static int epfd = -1;
 static source_t listener = { SRC_LISTENER, -1 };
+static source_t sigsrc = { SRC_SIGNAL, -1 };
+static int running = 1;
 static room_t room;
 static int next_conn_id = 1;
 
@@ -267,10 +270,46 @@ static void sweep(void) {
 
 /* ---------------------------------------------------------------- */
 
+/* SIGINT/SIGTERM arrive as readable data on a signalfd, so shutdown is
+ * just another event in the loop instead of an async signal handler. */
+static int setup_signals(void) {
+    sigset_t mask;
+    sigemptyset(&mask);
+    sigaddset(&mask, SIGINT);
+    sigaddset(&mask, SIGTERM);
+    if (sigprocmask(SIG_BLOCK, &mask, NULL) < 0) return -1;
+
+    sigsrc.fd = signalfd(-1, &mask, SFD_NONBLOCK | SFD_CLOEXEC);
+    if (sigsrc.fd < 0) return -1;
+
+    struct epoll_event ev = { .events = EPOLLIN, .data.ptr = &sigsrc };
+    return epoll_ctl(epfd, EPOLL_CTL_ADD, sigsrc.fd, &ev);
+}
+
+static void handle_signal(void) {
+    struct signalfd_siginfo info;
+    while (read(sigsrc.fd, &info, sizeof(info)) == sizeof(info)) {
+        log_info("received %s, shutting down", strsignal((int)info.ssi_signo));
+        running = 0;
+    }
+}
+
+static void close_all(void) {
+    for (size_t i = 0; i < room.max; i++) {
+        conn_t* c = room.slots[i];
+        if (!c) continue;
+        conn_flush(c); /* best effort */
+        close(c->src.fd);
+        conn_destroy(c);
+        room.slots[i] = NULL;
+    }
+    room.count = 0;
+}
+
 static void run(void) {
     struct epoll_event events[SERVER_MAX_EVENTS];
 
-    for (;;) {
+    while (running) {
         int n = epoll_wait(epfd, events, SERVER_MAX_EVENTS, -1);
         if (n < 0) {
             if (errno == EINTR) continue;
@@ -283,6 +322,9 @@ static void run(void) {
             switch (src->kind) {
                 case SRC_LISTENER:
                     accept_clients();
+                    break;
+                case SRC_SIGNAL:
+                    handle_signal();
                     break;
                 case SRC_CONN: {
                     conn_t* c = (conn_t*)src;
@@ -329,9 +371,16 @@ int main(int argc, char** argv) {
         return 1;
     }
 
+    if (setup_signals() < 0) {
+        perror("signalfd");
+        return 1;
+    }
+
     log_info("listening on port %d (max %d clients)", port, SERVER_DEFAULT_MAX_CLIENTS);
     run();
 
+    close_all();
+    close(sigsrc.fd);
     close(epfd);
     close(listener.fd);
     room_free(&room);
