@@ -15,6 +15,7 @@ endif()
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(GLFW REQUIRED IMPORTED_TARGET glfw3)
 find_package(OpenGL REQUIRED)
+pkg_check_modules(SODIUM REQUIRED IMPORTED_TARGET libsodium)
 
 # Dear ImGui is pinned to a release tag and built from source.
 include(FetchContent)
@@ -38,10 +39,30 @@ add_library(imgui STATIC
 target_include_directories(imgui PUBLIC ${imgui_SOURCE_DIR} ${imgui_SOURCE_DIR}/backends)
 target_link_libraries(imgui PUBLIC PkgConfig::GLFW OpenGL::GL)
 
+# ---- Shared C core --------------------------------------------------------
+# Protocol and crypto modules are compiled straight from the backend, so the
+# desktop client can never drift from the server's wire format.
+
+set(BACKEND_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../TCP-Chat-Backend)
+add_library(chat_core STATIC
+  ${BACKEND_DIR}/src/bytebuf.c
+  ${BACKEND_DIR}/src/frame.c
+  ${BACKEND_DIR}/src/framer.c
+  ${BACKEND_DIR}/src/message.c
+  ${BACKEND_DIR}/src/validate.c
+  ${BACKEND_DIR}/src/identity.c
+  ${BACKEND_DIR}/src/handshake.c
+  ${BACKEND_DIR}/src/secure.c
+  ${BACKEND_DIR}/src/known_servers.c
+)
+target_include_directories(chat_core PUBLIC ${BACKEND_DIR}/include)
+target_compile_options(chat_core PRIVATE -Wall -Wextra)
+target_link_libraries(chat_core PUBLIC PkgConfig::SODIUM)
+
 # ---- Application ----------------------------------------------------------
 
 add_executable(tcp-chat-desktop
   src/main.cpp
 )
 target_compile_options(tcp-chat-desktop PRIVATE -Wall -Wextra)
-target_link_libraries(tcp-chat-desktop PRIVATE imgui)
+target_link_libraries(tcp-chat-desktop PRIVATE imgui chat_core)

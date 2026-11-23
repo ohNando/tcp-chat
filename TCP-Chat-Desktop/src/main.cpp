@@ -3,6 +3,7 @@
 #include <cstdio>
 
 #include <GLFW/glfw3.h>
+#include "core.h"
 #include "imgui.h"
 #include "imgui_impl_glfw.h"
 #include "imgui_impl_opengl3.h"
@@ -12,6 +13,10 @@ static void glfw_error(int code, const char* desc) {
 }
 
 int main() {
+    if (sodium_init() < 0) {
+        std::fprintf(stderr, "libsodium initialization failed\n");
+        return 1;
+    }
     glfwSetErrorCallback(glfw_error);
     if (!glfwInit()) return 1;
 
