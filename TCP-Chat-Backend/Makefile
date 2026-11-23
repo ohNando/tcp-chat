@@ -36,7 +36,7 @@ TEST_BINS    = $(patsubst $(TEST_DIR)/%.c,$(TEST_BIN_DIR)/%,$(TEST_SRC))
 PORT      = 8080
 SERVER_IP = 127.0.0.1
 
-.PHONY: all build test run-server run-client clean
+.PHONY: all build test memcheck run-server run-client clean
 
 all: build
 
@@ -59,6 +59,12 @@ $(TEST_BIN_DIR)/%: $(TEST_DIR)/%.c $(MODULE_OBJ) | $(TEST_BIN_DIR)
 
 test: $(TEST_BINS)
 	@status=0; for t in $(TEST_BINS); do echo "$$t"; ./$$t || status=1; done; exit $$status
+
+# Runs every test under valgrind; fails on any memory error or leak.
+memcheck: $(TEST_BINS)
+	@status=0; for t in $(TEST_BINS); do echo "$$t"; \
+		DEBUGINFOD_URLS= valgrind -q --leak-check=full --error-exitcode=9 ./$$t >/dev/null || status=1; \
+	done; exit $$status
 
 run-server: $(SERVER_BIN)
 	$(SERVER_BIN) -p $(PORT)
