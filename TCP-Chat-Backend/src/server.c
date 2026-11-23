@@ -279,6 +279,18 @@ static void handle_ws_frame(conn_t* c, const ws_frame_t* f) {
             ws_fail(c, WS_CLOSE_UNSUPPORTED, "text frames are not supported");
             return;
 
+        case WS_OP_PING: {
+            /* Pong must echo the ping payload (at most 125 bytes). */
+            uint8_t hdr[WS_MAX_HEADER_SIZE];
+            size_t hlen = ws_frame_header(hdr, WS_OP_PONG, f->len);
+            if (conn_queue(c, hdr, hlen) < 0 || conn_queue(c, f->payload, f->len) < 0)
+                c->want_close = 1;
+            return;
+        }
+
+        case WS_OP_PONG:
+            return; /* we never send pings, nothing to match */
+
         case WS_OP_CLOSE: {
             /* Answer with a close frame of our own, then hang up. */
             uint8_t frame[4];
