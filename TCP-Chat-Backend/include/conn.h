@@ -62,6 +62,11 @@ typedef struct conn {
     size_t out_len;               /* bytes buffered */
     int epoll_out;                /* EPOLLOUT currently requested */
 
+    /* WebSocket message being reassembled from fragments. */
+    uint8_t* ws_msg;
+    size_t ws_msg_len;
+    int ws_in_message;
+
     secure_t sec;
     uint64_t created_ms;          /* for the handshake timeout */
 

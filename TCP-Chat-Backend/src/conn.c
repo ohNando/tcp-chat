@@ -42,6 +42,7 @@ void conn_destroy(conn_t* c) {
     if (!c) return;
     secure_wipe(&c->sec);
     framer_free(&c->in);
+    free(c->ws_msg);
     free(c->out);
     free(c);
 }

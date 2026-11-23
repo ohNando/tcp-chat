@@ -223,11 +223,90 @@ static void handle_http(conn_t* c) {
         http_error(c, 404, "Not Found");
 }
 
+/* Sends a close frame and closes once it is flushed. */
+static void ws_fail(conn_t* c, uint16_t code, const char* why) {
+    uint8_t frame[4];
+    log_info("conn %d (%s): websocket closed (%u): %s", c->id, c->peer, code, why);
+    conn_queue(c, frame, ws_close_frame(frame, code));
+    c->close_after_flush = 1;
+}
+
+/* Appends a fragment to the message being reassembled. */
+static int ws_append(conn_t* c, const uint8_t* data, size_t len) {
+    if (c->ws_msg_len + len > RECORD_MAX_BODY) return -1;
+    if (!c->ws_msg) {
+        c->ws_msg = malloc(RECORD_MAX_BODY);
+        if (!c->ws_msg) return -1;
+    }
+    memcpy(c->ws_msg + c->ws_msg_len, data, len);
+    c->ws_msg_len += len;
+    return 0;
+}
+
+static void handle_ws_frame(conn_t* c, const ws_frame_t* f) {
+    switch (f->opcode) {
+        case WS_OP_BINARY:
+            if (c->ws_in_message) {
+                ws_fail(c, WS_CLOSE_PROTOCOL, "new message inside a fragmented one");
+                return;
+            }
+            if (f->fin) {
+                process_record(c, f->payload, f->len); /* common, zero-copy case */
+                return;
+            }
+            c->ws_in_message = 1;
+            c->ws_msg_len = 0;
+            if (ws_append(c, f->payload, f->len) < 0)
+                ws_fail(c, WS_CLOSE_TOO_BIG, "message too big");
+            return;
+
+        case WS_OP_CONT:
+            if (!c->ws_in_message) {
+                ws_fail(c, WS_CLOSE_PROTOCOL, "continuation without a message");
+                return;
+            }
+            if (ws_append(c, f->payload, f->len) < 0) {
+                ws_fail(c, WS_CLOSE_TOO_BIG, "message too big");
+                return;
+            }
+            if (f->fin) {
+                c->ws_in_message = 0;
+                process_record(c, c->ws_msg, c->ws_msg_len);
+            }
+            return;
+
+        case WS_OP_TEXT:
+            ws_fail(c, WS_CLOSE_UNSUPPORTED, "text frames are not supported");
+            return;
+
+        case WS_OP_CLOSE: {
+            /* Answer with a close frame of our own, then hang up. */
+            uint8_t frame[4];
+            conn_queue(c, frame, ws_close_frame(frame, WS_CLOSE_NORMAL));
+            c->close_after_flush = 1;
+            return;
+        }
+
+        default:
+            return;
+    }
+}
+
 static void handle_ws(conn_t* c) {
-    /* Frames are handled in a later step; drop input for now. */
-    size_t len;
-    framer_peek(&c->in, &len);
-    framer_consume(&c->in, len);
+    while (!c->close_after_flush && !c->want_close) {
+        size_t len;
+        uint8_t* data = framer_peek(&c->in, &len);
+        ws_frame_t f;
+
+        int n = ws_parse_frame(data, len, RECORD_MAX_BODY, &f);
+        if (n == 0) return;
+        if (n < 0) {
+            ws_fail(c, WS_CLOSE_PROTOCOL, "invalid frame");
+            return;
+        }
+        handle_ws_frame(c, &f);
+        framer_consume(&c->in, (size_t)n);
+    }
 }
 
 static void handle_readable(conn_t* c) {
