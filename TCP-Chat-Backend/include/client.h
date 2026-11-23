@@ -15,6 +15,7 @@
 #define CLIENT_LINE_MAX     4096
 
 typedef enum {
+    CLIENT_HANDSHAKE,    /* secure channel being set up */
     CLIENT_NAMING,       /* waiting for the user to type a name */
     CLIENT_REGISTERING,  /* NAME sent, waiting for WELCOME or ERR */
     CLIENT_CHATTING,

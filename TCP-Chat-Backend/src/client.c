@@ -2,6 +2,7 @@
 #include "framer.h"
 #include "message.h"
 #include "network.h"
+#include "secure.h"
 #include "utility.h"
 #include "validate.h"
 
@@ -14,8 +15,9 @@
 
 static int sockfd = -1;
 static framer_t in;
-static client_state_t state = CLIENT_NAMING;
+static client_state_t state = CLIENT_HANDSHAKE;
 static uint32_t tx_seq = 0;
+static secure_t sec;
 
 /* stdin is read with read(), not fgets(): stdio buffering does not mix
  * with poll(). Complete lines are cut out of this buffer. */
@@ -40,7 +42,14 @@ static int use_color = 0;
 /* ---------------------------------------------------------------- */
 
 static void prompt(void) {
+    if (state == CLIENT_HANDSHAKE) return;
     printToConsole(state == CLIENT_NAMING ? "Name: " : PROMPT, 0);
+}
+
+/* While waiting for the server, typed lines stay buffered. */
+static int input_blocked(void) {
+    return state == CLIENT_HANDSHAKE || state == CLIENT_REGISTERING ||
+           state == CLIENT_QUITTING;
 }
 
 /* Prints a line above the prompt. */
@@ -84,13 +93,25 @@ static int send_all(const uint8_t* p, size_t n) {
     return 0;
 }
 
-static int send_message(const message_t* m) {
-    static uint8_t buf[RECORD_HEADER_SIZE + FRAME_MAX_SIZE];
-    int n = message_encode(m, tx_seq++, buf + RECORD_HEADER_SIZE,
-                           sizeof(buf) - RECORD_HEADER_SIZE);
+/* secure_t emit callback: one record = length prefix + body. */
+static int emit_record(void* ctx, const uint8_t* body, size_t len) {
+    (void)ctx;
+    uint8_t hdr[RECORD_HEADER_SIZE];
+    record_put_header(hdr, (uint32_t)len);
+    if (send_all(hdr, sizeof(hdr)) < 0) return -1;
+    return send_all(body, len);
+}
+
+/* Encodes, encrypts and sends. `final` ends our side of the stream. */
+static int send_message_ex(const message_t* m, int final) {
+    static uint8_t frame[FRAME_MAX_SIZE];
+    int n = message_encode(m, tx_seq++, frame, sizeof(frame));
     if (n < 0) return -1;
-    record_put_header(buf, (uint32_t)n);
-    return send_all(buf, RECORD_HEADER_SIZE + (size_t)n);
+    return secure_send(&sec, frame, (size_t)n, final);
+}
+
+static int send_message(const message_t* m) {
+    return send_message_ex(m, 0);
 }
 
 static void handle_server_message(message_t* m) {
@@ -160,9 +181,23 @@ static int handle_socket(void) {
     const uint8_t* body;
     size_t len;
     int r;
+    static uint8_t plain[RECORD_MAX_BODY];
     static message_t m;
     while ((r = framer_next(&in, &body, &len)) == 1) {
-        if (message_decode(body, len, &m, NULL) < 0) {
+        size_t plen;
+        int s = secure_recv(&sec, body, len, plain, sizeof(plain), &plen);
+        if (s == SECURE_ERR) {
+            show("%s! Secure channel error: %s%s", C_ERROR, sec.error, C_RESET);
+            return -1;
+        }
+        if (s == SECURE_NONE) {
+            if (state == CLIENT_HANDSHAKE && secure_established(&sec)) {
+                state = CLIENT_NAMING;
+                show("%s* Secure connection established.%s", C_INFO, C_RESET);
+            }
+            continue;
+        }
+        if (message_decode(plain, plen, &m, NULL) < 0) {
             show("! Malformed frame from server.");
             return -1;
         }
@@ -203,7 +238,8 @@ static int handle_line(const char* line) {
         if (strcmp(line, "/quit") == 0 || strcmp(line, "/exit") == 0) {
             message_init(&m, FT_QUIT);
             state = CLIENT_QUITTING;
-            return send_message(&m); /* server closes, recv() then sees EOF */
+            /* Last record of our stream; the server closes, recv() sees EOF. */
+            return send_message_ex(&m, 1);
         }
         if (strcmp(line, "/users") == 0) {
             message_init(&m, FT_USERS_REQ);
@@ -235,7 +271,7 @@ static int handle_line(const char* line) {
  * as another NAME before the server's answer arrives. */
 static int process_lines(void) {
     char* nl;
-    while (state != CLIENT_REGISTERING && state != CLIENT_QUITTING &&
+    while (!input_blocked() &&
            (nl = memchr(line_buf, '\n', line_len)) != NULL) {
         *nl = '\0';
         if (nl > line_buf && nl[-1] == '\r') nl[-1] = '\0';
@@ -263,7 +299,7 @@ static int handle_stdin(void) {
     line_len += (size_t)n;
     if (process_lines() < 0) return -1;
 
-    if (line_len == sizeof(line_buf) && state != CLIENT_REGISTERING) {
+    if (line_len == sizeof(line_buf) && !input_blocked()) {
         show("! Line too long, ignored.");
         line_overflow = 1;
         line_len = 0;
@@ -289,8 +325,10 @@ int main(int argc, char** argv) {
     sockfd = connectToServer(host, port);
     if (sockfd < 0) return 1;
     if (framer_init(&in, RECORD_MAX_BODY) < 0) return 1;
-
-    prompt();
+    if (secure_client_init(&sec, NULL, emit_record, NULL) < 0) {
+        fprintf(stderr, "(-)| Cannot start handshake.\n");
+        return 1;
+    }
 
     struct pollfd fds[2] = {
         { .fd = STDIN_FILENO, .events = POLLIN },
@@ -300,7 +338,7 @@ int main(int argc, char** argv) {
     for (;;) {
         /* Negative fd: poll() ignores it. */
         fds[0].fd = stdin_eof ? -1 : STDIN_FILENO;
-        fds[0].events = state == CLIENT_REGISTERING ? 0 : POLLIN;
+        fds[0].events = input_blocked() ? 0 : POLLIN;
 
         if (poll(fds, 2, -1) < 0) {
             if (errno == EINTR) continue;
@@ -314,13 +352,14 @@ int main(int argc, char** argv) {
         if (fds[0].revents & (POLLIN | POLLHUP)) {
             if (handle_stdin() < 0) break;
         }
-        if (stdin_eof && state != CLIENT_REGISTERING && state != CLIENT_QUITTING &&
+        if (stdin_eof && !input_blocked() &&
             !memchr(line_buf, '\n', line_len))
             break;
     }
 
     printf("\n");
     framer_free(&in);
+    secure_wipe(&sec);
     close(sockfd);
     return 0;
 }
