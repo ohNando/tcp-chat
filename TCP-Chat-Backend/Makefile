@@ -14,7 +14,7 @@ CLIENT_BIN = $(BIN_DIR)/client
 
 # ----- Objects -----
 COMMON_OBJ = $(OBJ_DIR)/utility.o $(OBJ_DIR)/network.o
-PROTO_OBJ  = $(OBJ_DIR)/bytebuf.o $(OBJ_DIR)/frame.o $(OBJ_DIR)/framer.o
+PROTO_OBJ  = $(OBJ_DIR)/bytebuf.o $(OBJ_DIR)/frame.o $(OBJ_DIR)/framer.o $(OBJ_DIR)/message.o
 SERVER_OBJ = $(OBJ_DIR)/server.o $(OBJ_DIR)/gui_bridge.o $(OBJ_DIR)/queue.o $(COMMON_OBJ)
 CLIENT_OBJ = $(OBJ_DIR)/client.o $(COMMON_OBJ)
 DEPS       = $(wildcard $(OBJ_DIR)/*.d $(TEST_BIN_DIR)/*.d)
