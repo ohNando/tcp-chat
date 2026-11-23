@@ -6,6 +6,7 @@
 #include "validate.h"
 
 #include <poll.h>
+#include <signal.h>
 #include <stdarg.h>
 #include <time.h>
 
@@ -274,6 +275,8 @@ int main(int argc, char** argv) {
     const char* host = argc > 1 ? argv[1] : CLIENT_DEFAULT_HOST;
     int port = argc > 2 ? atoi(argv[2]) : CLIENT_DEFAULT_PORT;
 
+    /* send() uses MSG_NOSIGNAL; this guards any other write path. */
+    signal(SIGPIPE, SIG_IGN);
     use_color = isatty(STDOUT_FILENO);
 
     sockfd = connectToServer(host, port);
