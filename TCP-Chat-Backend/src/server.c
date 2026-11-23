@@ -48,6 +48,11 @@ static void handle_name(conn_t* c, const message_t* in) {
         return;
     }
 
+    if (room_find_name(&room, in->name)) {
+        send_error(c, ERR_NAME_TAKEN, "That name is already taken.");
+        return;
+    }
+
     memcpy(c->name, in->name, sizeof(c->name));
     c->registered = 1;
     log_info("conn %d registered as '%s'", c->id, c->name);
