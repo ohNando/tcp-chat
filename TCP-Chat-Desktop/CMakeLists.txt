@@ -61,8 +61,18 @@ target_link_libraries(chat_core PUBLIC PkgConfig::SODIUM)
 
 # ---- Application ----------------------------------------------------------
 
+# Networking without any UI, so it can be tested headless.
+add_library(chat_client STATIC src/chat_client.cpp)
+target_include_directories(chat_client PUBLIC src)
+target_compile_options(chat_client PRIVATE -Wall -Wextra)
+target_link_libraries(chat_client PUBLIC chat_core)
+
 add_executable(tcp-chat-desktop
   src/main.cpp
 )
 target_compile_options(tcp-chat-desktop PRIVATE -Wall -Wextra)
-target_link_libraries(tcp-chat-desktop PRIVATE imgui chat_core)
+target_link_libraries(tcp-chat-desktop PRIVATE imgui chat_client)
+
+# Headless test against a running server: client_smoke <host> <port>
+add_executable(client_smoke tests/client_smoke.cpp)
+target_link_libraries(client_smoke PRIVATE chat_client)

@@ -1,0 +1,110 @@
+// Nonblocking, single-threaded chat client for the desktop app.
+//
+// Call poll() once per UI frame: it finishes a pending connect(), reads and
+// decrypts whatever arrived, and flushes queued output. Nothing blocks, so
+// the UI never freezes and no threads or locks are needed.
+#pragma once
+
+#include <cstdint>
+#include <memory>
+#include <string>
+#include <vector>
+
+#include "core.h"
+
+enum class ConnState {
+    Disconnected,
+    Connecting,   // TCP connect() in progress
+    Handshaking,  // secure channel being set up
+    Registering,  // NAME sent, waiting for WELCOME or ERR
+    Chatting,
+};
+
+struct ChatLine {
+    enum Kind { Chat, System, Error } kind;
+    std::string name;   // Chat only
+    std::string text;
+    uint64_t timestamp; // ms since epoch, Chat only
+    bool own;
+};
+
+class ChatClient {
+public:
+    ChatClient();
+    ~ChatClient();
+    ChatClient(const ChatClient&) = delete;
+    ChatClient& operator=(const ChatClient&) = delete;
+
+    // Starts connecting; the name is sent automatically after the handshake.
+    bool connect(const std::string& host, int port, const std::string& name);
+    void disconnect();
+    void poll();
+
+    bool sendText(const std::string& text);
+    bool requestUsers();
+    void quit();
+
+    // ---- trust on first use -------------------------------------------
+    // When the server key is unknown the handshake is refused and the key
+    // is kept here until the user decides.
+    bool trustPending() const { return trust_pending_; }
+    bool identityChanged() const { return identity_changed_; }
+    const std::string& serverFingerprint() const { return server_fp_; }
+    const std::string& pinnedFingerprint() const { return pinned_fp_; }
+    const std::string& knownServersPath() const { return known_path_; }
+    void acceptPendingKey();   // saves the key and reconnects
+    void rejectPendingKey();
+
+    // ---- state for the UI ------------------------------------------------
+    ConnState state() const { return state_; }
+    const std::string& host() const { return host_; }
+    int port() const { return port_; }
+    const std::string& name() const { return name_; }
+    const std::vector<std::string>& users() const { return users_; }
+    const std::vector<ChatLine>& lines() const { return lines_; }
+    const std::string& lastError() const { return last_error_; }
+    uint64_t linesVersion() const { return lines_version_; } // bumps on change
+
+private:
+    static int emitThunk(void* ctx, const uint8_t* body, size_t len);
+    static int verifyThunk(void* ctx, const unsigned char pk[IDENTITY_PK_BYTES]);
+    int verify(const unsigned char pk[IDENTITY_PK_BYTES]);
+
+    void finishConnect();
+    void readSocket();
+    void flushOutput();
+    void handleRecord(const uint8_t* body, size_t len);
+    void handleMessage(const message_t& m);
+    bool sendMessage(const message_t& m, bool final = false);
+    void fail(const std::string& why);
+    void addLine(ChatLine::Kind kind, std::string text, std::string name = {},
+                 uint64_t ts = 0, bool own = false);
+    void closeSocket();
+
+    int fd_ = -1;
+    ConnState state_ = ConnState::Disconnected;
+    double connect_started_ = 0;
+
+    std::string host_;
+    int port_ = 0;
+    std::string hostport_;
+    std::string name_;
+
+    framer_t in_{};
+    std::vector<uint8_t> out_;
+    size_t out_off_ = 0;
+    secure_t sec_{};
+    uint32_t tx_seq_ = 0;
+    std::unique_ptr<message_t> scratch_;    // ~8.5 KB, kept off the stack
+    std::vector<uint8_t> plain_;
+
+    std::vector<std::string> users_;
+    std::vector<ChatLine> lines_;
+    uint64_t lines_version_ = 0;
+    std::string last_error_;
+
+    bool trust_pending_ = false;
+    bool identity_changed_ = false;
+    std::string server_fp_, pinned_fp_, known_path_;
+    unsigned char pending_pk_[IDENTITY_PK_BYTES] = {};
+};
