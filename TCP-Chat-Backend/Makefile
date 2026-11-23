@@ -22,6 +22,8 @@ DEPS       = $(wildcard $(OBJ_DIR)/*.d)
 PORT      = 8080
 SERVER_IP = 127.0.0.1
 
+.PHONY: all build run-server run-client clean
+
 all: build
 
 build: $(SERVER_BIN) $(CLIENT_BIN)
