@@ -57,7 +57,7 @@ test: $(TEST_BINS)
 	@status=0; for t in $(TEST_BINS); do echo "$$t"; ./$$t || status=1; done; exit $$status
 
 run-server: $(SERVER_BIN)
-	$(SERVER_BIN) $(PORT)
+	$(SERVER_BIN) -p $(PORT)
 
 run-client: $(CLIENT_BIN)
 	$(CLIENT_BIN) $(SERVER_IP) $(PORT)

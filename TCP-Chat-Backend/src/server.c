@@ -5,6 +5,7 @@
 #include "utility.h"
 #include "validate.h"
 
+#include <getopt.h>
 #include <signal.h>
 #include <sys/epoll.h>
 #include <sys/signalfd.h>
@@ -342,14 +343,57 @@ static void run(void) {
     }
 }
 
+static void usage(const char* prog) {
+    fprintf(stderr,
+            "Usage: %s [-p port] [-m max_clients]\n"
+            "  -p  TCP port to listen on (default %d)\n"
+            "  -m  maximum simultaneous clients, 1-%d (default %d)\n",
+            prog, SERVER_DEFAULT_PORT, USERS_MAX, SERVER_DEFAULT_MAX_CLIENTS);
+}
+
+/* Parses a decimal integer in [min, max]; returns -1 if invalid. */
+static long parse_int(const char* s, long min, long max) {
+    char* end;
+    errno = 0;
+    long v = strtol(s, &end, 10);
+    if (errno || *s == '\0' || *end != '\0' || v < min || v > max) return -1;
+    return v;
+}
+
 int main(int argc, char** argv) {
-    int port = argc > 1 ? atoi(argv[1]) : SERVER_DEFAULT_PORT;
+    int port = SERVER_DEFAULT_PORT;
+    int max_clients = SERVER_DEFAULT_MAX_CLIENTS;
+    int opt;
+
+    while ((opt = getopt(argc, argv, "p:m:h")) != -1) {
+        long v;
+        switch (opt) {
+            case 'p':
+                if ((v = parse_int(optarg, 1, 65535)) < 0) {
+                    fprintf(stderr, "invalid port: %s\n", optarg);
+                    return 1;
+                }
+                port = (int)v;
+                break;
+            case 'm':
+                /* The USERS frame carries at most USERS_MAX names. */
+                if ((v = parse_int(optarg, 1, USERS_MAX)) < 0) {
+                    fprintf(stderr, "invalid max clients: %s\n", optarg);
+                    return 1;
+                }
+                max_clients = (int)v;
+                break;
+            default:
+                usage(argv[0]);
+                return opt == 'h' ? 0 : 1;
+        }
+    }
 
     /* conn_flush() already uses MSG_NOSIGNAL; ignoring SIGPIPE as well
      * protects any other write path from killing the process. */
     signal(SIGPIPE, SIG_IGN);
 
-    if (room_init(&room, SERVER_DEFAULT_MAX_CLIENTS) < 0) {
+    if (room_init(&room, (size_t)max_clients) < 0) {
         fprintf(stderr, "out of memory\n");
         return 1;
     }
@@ -376,7 +420,7 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    log_info("listening on port %d (max %d clients)", port, SERVER_DEFAULT_MAX_CLIENTS);
+    log_info("listening on port %d (max %d clients)", port, max_clients);
     run();
 
     close_all();
