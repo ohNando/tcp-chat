@@ -63,6 +63,10 @@ static void handle_name(conn_t* c, const message_t* in) {
              c->name, room_member_count(&room));
     room_send_to(c, &m);
 
+    /* New members get the current list right away. */
+    room_fill_users(&room, &m);
+    room_send_to(c, &m);
+
     message_init(&m, FT_JOIN);
     memcpy(m.name, c->name, sizeof(m.name));
     room_broadcast(&room, &m, c);
@@ -100,6 +104,10 @@ static void handle_message(conn_t* c, const message_t* m) {
             break;
         case FT_MSG:
             handle_chat(c, m);
+            break;
+        case FT_USERS_REQ:
+            room_fill_users(&room, &reply);
+            room_send_to(c, &reply);
             break;
         case FT_PING:
             message_init(&reply, FT_PONG);
