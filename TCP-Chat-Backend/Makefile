@@ -1,6 +1,6 @@
 # ----- Toolchain -----
 CC      = gcc
-CFLAGS  = -g -Wall -Wextra -I./include
+CFLAGS  = -g -Wall -Wextra -I./include -MMD -MP
 LDLIBS  = -lpthread
 
 # ----- Directories -----
@@ -16,6 +16,7 @@ CLIENT_BIN = $(BIN_DIR)/client
 COMMON_OBJ = $(OBJ_DIR)/utility.o $(OBJ_DIR)/network.o
 SERVER_OBJ = $(OBJ_DIR)/server.o $(OBJ_DIR)/gui_bridge.o $(OBJ_DIR)/queue.o $(COMMON_OBJ)
 CLIENT_OBJ = $(OBJ_DIR)/client.o $(COMMON_OBJ)
+DEPS       = $(wildcard $(OBJ_DIR)/*.d)
 
 # ----- Defaults for run targets -----
 PORT      = 8080
@@ -41,4 +42,6 @@ run-client: $(CLIENT_BIN)
 	$(CLIENT_BIN) $(SERVER_IP) $(PORT)
 
 clean:
-	rm -rf $(OBJ_DIR)/*.o $(SERVER_BIN) $(CLIENT_BIN)
+	rm -rf $(OBJ_DIR)/*.o $(OBJ_DIR)/*.d $(SERVER_BIN) $(CLIENT_BIN)
+
+-include $(DEPS)
