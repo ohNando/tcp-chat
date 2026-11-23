@@ -1,267 +1,282 @@
+#define _GNU_SOURCE /* accept4 */
+
 #include "server.h"
+#include "network.h"
+#include "utility.h"
+#include "validate.h"
 
-void chat(const char* szMessage, int sender_sockfd){
-    int sockets_to_remove[MAX_CLIENT];
-    int removel_count = 0;
+#include <sys/epoll.h>
+#include <time.h>
 
-    LOCK(&clients_mutex);
-    for(int i = 0; i < MAX_CLIENT; i++){
-        if(clients[i].active && clients[i].sockfd != sender_sockfd){
-            if (write(clients[i].sockfd, szMessage, strlen(szMessage)) < 0) {
-                if(clients[i].pending_removal == 0){
-                    clients[i].pending_removal = 1;
-                    sockets_to_remove[removel_count++] = clients[i].sockfd;
-                    printf("(-)| Error writing to chat socket (fd: %d). Marking for removal.\n", clients[i].sockfd);
+static int epfd = -1;
+static source_t listener = { SRC_LISTENER, -1 };
+static room_t room;
+static int next_conn_id = 1;
+
+static uint64_t now_ms(void) {
+    struct timespec ts;
+    clock_gettime(CLOCK_REALTIME, &ts);
+    return (uint64_t)ts.tv_sec * 1000u + (uint64_t)ts.tv_nsec / 1000000u;
+}
+
+static void send_error(conn_t* c, uint16_t code, const char* text) {
+    message_t m;
+    message_init(&m, FT_ERR);
+    m.code = code;
+    snprintf(m.text, sizeof(m.text), "%s", text);
+    room_send_to(c, &m);
+}
+
+static void protocol_error(conn_t* c, const char* why) {
+    log_info("conn %d (%s): protocol error: %s", c->id, c->peer, why);
+    send_error(c, ERR_PROTOCOL, why);
+    c->close_after_flush = 1;
+}
+
+/* ---------------------------------------------------------------- */
+/* Message handlers                                                  */
+/* ---------------------------------------------------------------- */
+
+static void handle_chat(conn_t* c, const message_t* in) {
+    if (!text_valid(in->text)) {
+        send_error(c, ERR_TEXT_INVALID, "Message is empty, too long or has control characters.");
+        return;
+    }
+
+    message_t out;
+    message_init(&out, FT_CHAT);
+    out.timestamp = now_ms();
+    memcpy(out.name, c->name, sizeof(out.name));
+    memcpy(out.text, in->text, sizeof(out.text));
+
+    /* Sender included: the server is the single source of truth, so
+     * clients render their own messages only when they come back. */
+    room_broadcast(&room, &out, NULL);
+}
+
+static void handle_message(conn_t* c, const message_t* m) {
+    message_t reply;
+
+    switch (m->type) {
+        case FT_MSG:
+            handle_chat(c, m);
+            break;
+        case FT_PING:
+            message_init(&reply, FT_PONG);
+            room_send_to(c, &reply);
+            break;
+        case FT_QUIT:
+            c->close_after_flush = 1;
+            break;
+        default:
+            protocol_error(c, "Unexpected frame type from client.");
+            break;
+    }
+}
+
+/* ---------------------------------------------------------------- */
+/* Socket events                                                     */
+/* ---------------------------------------------------------------- */
+
+static void handle_readable(conn_t* c) {
+    size_t avail;
+    uint8_t* space = framer_space(&c->in, &avail);
+    if (avail == 0) {
+        protocol_error(c, "Input buffer full.");
+        return;
+    }
+
+    ssize_t n = recv(c->src.fd, space, avail, 0);
+    if (n == 0) {
+        c->want_close = 1; /* orderly shutdown by peer */
+        return;
+    }
+    if (n < 0) {
+        if (errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR)
+            c->want_close = 1;
+        return;
+    }
+    framer_commit(&c->in, (size_t)n);
+
+    const uint8_t* body;
+    size_t len;
+    int r;
+    message_t m;
+
+    while (!c->close_after_flush && (r = framer_next(&c->in, &body, &len)) == 1) {
+        if (message_decode(body, len, &m, NULL) < 0) {
+            protocol_error(c, "Malformed frame.");
+            return;
+        }
+        handle_message(c, &m);
+    }
+    if (r < 0) protocol_error(c, "Record too large.");
+}
+
+static void reject_full(int fd, const struct sockaddr_in* addr) {
+    conn_t* tmp = conn_create(fd, 0, addr);
+    if (tmp) {
+        send_error(tmp, ERR_ROOM_FULL, "Chat room is full.");
+        conn_flush(tmp); /* best effort */
+        log_info("rejected %s: room full", tmp->peer);
+        conn_destroy(tmp);
+    }
+    close(fd);
+}
+
+static void accept_clients(void) {
+    for (;;) {
+        struct sockaddr_in addr;
+        socklen_t len = sizeof(addr);
+        int fd = accept4(listener.fd, (SA*)&addr, &len, SOCK_NONBLOCK | SOCK_CLOEXEC);
+        if (fd < 0) {
+            if (errno == EINTR) continue;
+            if (errno != EAGAIN && errno != EWOULDBLOCK)
+                log_info("accept failed: %s", strerror(errno));
+            return;
+        }
+
+        conn_t* c = conn_create(fd, next_conn_id++, &addr);
+        if (!c) {
+            close(fd);
+            continue;
+        }
+        if (room_add(&room, c) < 0) {
+            conn_destroy(c);
+            reject_full(fd, &addr);
+            continue;
+        }
+
+        struct epoll_event ev = { .events = EPOLLIN, .data.ptr = c };
+        if (epoll_ctl(epfd, EPOLL_CTL_ADD, fd, &ev) < 0) {
+            log_info("epoll_ctl add failed: %s", strerror(errno));
+            room_remove(&room, c);
+            conn_destroy(c);
+            close(fd);
+            continue;
+        }
+
+        /* Temporary until NAME registration exists. */
+        snprintf(c->name, sizeof(c->name), "guest-%d", c->id);
+        c->registered = 1;
+        log_info("conn %d connected from %s", c->id, c->peer);
+    }
+}
+
+/* ---------------------------------------------------------------- */
+/* End of loop turn: flush, update interest, close                   */
+/* ---------------------------------------------------------------- */
+
+static void close_conn(conn_t* c) {
+    epoll_ctl(epfd, EPOLL_CTL_DEL, c->src.fd, NULL);
+    close(c->src.fd);
+    room_remove(&room, c);
+    log_info("conn %d (%s) closed", c->id, c->peer);
+    conn_destroy(c);
+}
+
+static void update_conn(conn_t* c) {
+    if (conn_pending_output(c) > 0 && conn_flush(c) < 0) {
+        c->want_close = 1;
+        return;
+    }
+    if (c->close_after_flush && conn_pending_output(c) == 0) {
+        c->want_close = 1;
+        return;
+    }
+
+    int want_out = conn_pending_output(c) > 0;
+    if (want_out != c->epoll_out) {
+        struct epoll_event ev = {
+            .events = EPOLLIN | (want_out ? EPOLLOUT : 0),
+            .data.ptr = c,
+        };
+        if (epoll_ctl(epfd, EPOLL_CTL_MOD, c->src.fd, &ev) == 0)
+            c->epoll_out = want_out;
+    }
+}
+
+static void sweep(void) {
+    int again;
+    do {
+        again = 0;
+        for (size_t i = 0; i < room.max; i++) {
+            conn_t* c = room.slots[i];
+            if (!c) continue;
+            if (!c->want_close) update_conn(c);
+            if (c->want_close) {
+                close_conn(c);
+                again = 1; /* closing may have queued data for others */
+            }
+        }
+    } while (again);
+}
+
+/* ---------------------------------------------------------------- */
+
+static void run(void) {
+    struct epoll_event events[SERVER_MAX_EVENTS];
+
+    for (;;) {
+        int n = epoll_wait(epfd, events, SERVER_MAX_EVENTS, -1);
+        if (n < 0) {
+            if (errno == EINTR) continue;
+            log_info("epoll_wait failed: %s", strerror(errno));
+            return;
+        }
+
+        for (int i = 0; i < n; i++) {
+            source_t* src = events[i].data.ptr;
+            switch (src->kind) {
+                case SRC_LISTENER:
+                    accept_clients();
+                    break;
+                case SRC_CONN: {
+                    conn_t* c = (conn_t*)src;
+                    if (c->want_close) break;
+                    if (events[i].events & (EPOLLIN | EPOLLHUP | EPOLLERR))
+                        handle_readable(c);
+                    /* EPOLLOUT needs no handler: sweep() flushes. */
+                    break;
                 }
+                default:
+                    break;
             }
         }
-    }
-    UNLOCK(&clients_mutex);
-
-    if(send_message_to_gui(szMessage) < 0){
-        printf("(W)| Failed to sending message to GUI bridge.\n");
-    }
-
-    for(int i = 0; i < removel_count; i++){
-        removeClient(sockets_to_remove[i]);
+        sweep();
     }
 }
 
-void removeClient(int rem_sockfd) {
-    struct sockaddr_in temp_addr;
-    char nameBuf[NAME_LEN] = {0};
-    int found = 0;
-    int cli_index_debug = -1;
+int main(int argc, char** argv) {
+    int port = argc > 1 ? atoi(argv[1]) : SERVER_DEFAULT_PORT;
 
-    LOCK(&clients_mutex);
-    for (int i = 0; i < MAX_CLIENT; i++) {
-        if (clients[i].active && clients[i].sockfd == rem_sockfd) {
-            cli_index_debug = i;
-
-            strncpy(nameBuf, clients[i].name, NAME_LEN -1); //Copy message 
-            nameBuf[NAME_LEN - 1] = '\0';
-            temp_addr = clients[i].addr;
-
-            clients[i].active = 0; //Deactivate client
-            close(clients[i].sockfd); //Close socket
-
-            clients[i].sockfd = -1; //Reset sockfd
-            clients[i].pending_removal = 0;
-            memset(clients[i].name, 0, NAME_LEN);
-
-            found = 1;
-            break;
-        }
-    }
-    UNLOCK(&clients_mutex);
-
-
-    if (found) {
-        char ip_str[INET_ADDRSTRLEN];
-        strncpy(ip_str, inet_ntoa(temp_addr.sin_addr), INET_ADDRSTRLEN - 1);
-        ip_str[INET_ADDRSTRLEN - 1] = '\0';
-
-        printf("(!)| Client \'%s\' (slot: %d, original fd: %d) from %s:%d has been removed!\n",
-            (strlen(nameBuf) > 0 ? nameBuf : "[NoName]"),
-            cli_index_debug,
-            rem_sockfd,
-            ip_str,
-            ntohs(temp_addr.sin_port)
-        );
-
-        if(strlen(nameBuf) > 0){
-            char leaveMsg[MAX_BUFSIZE];
-            snprintf(leaveMsg, sizeof(leaveMsg),
-                     "SERVER: %s has left the chat.\n", nameBuf);
-            chat(leaveMsg, -1);
-        }
-    }else{
-        printf("[WARN] removeClient called for sockfd %d,but no active client found.\n"
-            , rem_sockfd);
-    }
-}
-
-void* handleClient(void* arg){
-    client_t* pClient = (client_t*)arg;
-    int client_sockfd = pClient->sockfd;
-    char clientName[NAME_LEN];
-    char buffer[MAX_BUFSIZE];
-    int n;
-    memset(clientName, 0, NAME_LEN);
-
-    const char* nameMsg = "SERVER: Welcome! Please enter your name: ";
-    if(write(client_sockfd, nameMsg, strlen(nameMsg)) < 0){
-        perror("(-)| Error writing name message !");
-        removeClient(client_sockfd);
-        pthread_exit(NULL);
-    }
-
-    n = read(client_sockfd, clientName, NAME_LEN-1);
-    if(n <= 0){
-        if(n == 0) printf("(-)| Client (fd:%d) disconneting before sending name!\n",client_sockfd);
-        else perror("(-)| Error reading name!");
-        removeClient(client_sockfd);
-        pthread_exit(NULL);
-    }
-
-    clientName[strcspn(clientName, "\r\n")] = 0;
-    while(strlen(clientName) > 0 && (clientName[strlen(clientName)-1] == ' ' ||
-     clientName[strlen(clientName) - 1] < 32)){
-        clientName[strlen(clientName) - 1] = '\0';
-    }
-
-    LOCK(&clients_mutex);
-    strncpy(pClient->name, clientName, NAME_LEN - 1);
-    pClient->name[NAME_LEN - 1] = '\0';
-    UNLOCK(&clients_mutex);
-
-    printf("(+)| %s (fd: %d) connected from %s:%d.\n",
-        pClient->name,client_sockfd,
-        inet_ntoa(pClient->addr.sin_addr),
-        ntohs(pClient->addr.sin_port)
-    );
-
-    char joinMsg[MAX_BUFSIZE];
-    char message[MAX_BUFSIZE + NAME_LEN + 20]; 
-    snprintf(joinMsg, sizeof(joinMsg), "SERVER: %s has joined the char.\n",pClient->name);
-    chat(joinMsg,client_sockfd);
-
-    while(1){
-        memset(buffer, 0, MAX_BUFSIZE);
-        n = read(client_sockfd, buffer, MAX_BUFSIZE - 1);
-
-        if(n <= 0){
-            if(n == 0) printf("(-)| Client has disconnected gracefully..\n");
-            else perror("(-)| Error reading from socket..");
-
-            removeClient(client_sockfd);
-            break;
-        }
-
-        buffer[strcspn(buffer,"\r\n")] = 0;
-
-        if(strcmp(buffer, "/exit") == 0){
-            printf("SERVER: Client %s sent /exit command.\n", pClient->name);
-            removeClient(client_sockfd);
-            break;
-        }
-
-        memset(message,0,sizeof(message));
-        snprintf(message, sizeof(message), "%s: %s\n",
-            pClient->name,
-            buffer
-        );
-        printf("%s", message);
-        chat(message,client_sockfd);
-    }
-    pthread_exit(NULL);
-}
-
-void startServerLoop(int listen_sockfd){
-    int newConnSockfd;
-    struct sockaddr_in cli_addr;
-    socklen_t cliLen;
-    pthread_t tid;
-
-    while(1){
-        cliLen = sizeof(cli_addr);
-        newConnSockfd = accept(listen_sockfd, (SA*)&cli_addr, &cliLen);
-
-        if(newConnSockfd < 0){
-            perror("(-)| Server accept failed...\n");
-            if(newConnSockfd == -1 ) continue;
-            else error("(-)| Fatal error in accept loop!\n");
-        }
-
-        int i;
-        LOCK(&clients_mutex);
-        for(i = 0; i < MAX_CLIENT; i++){
-            if(!clients[i].active){
-                clients[i].sockfd = newConnSockfd;
-                clients[i].addr = cli_addr;
-                clients[i].active = 1;
-                clients[i].pending_removal = 0;
-                memset(clients[i].name, 0, NAME_LEN);
-                break;
-            }
-        }
-        UNLOCK(&clients_mutex);
-
-        if(i == MAX_CLIENT){
-            printf("(-)| Max clients reached. Connection rejected for: %s:%d.\n",
-                    inet_ntoa(cli_addr.sin_addr), ntohs(cli_addr.sin_port));
-            const char* reject_msg = "SERVER: Chat room is full.";
-            write(newConnSockfd, reject_msg, strlen(reject_msg));
-            close(newConnSockfd);
-        }else{
-            if(pthread_create(&tid, NULL, &handleClient, (void*)&clients[i]) != 0){
-                perror("(-)| Error creating thread!\n");
-                pthread_mutex_lock(&clients_mutex);
-                clients[i].active = 0;
-                pthread_mutex_unlock(&clients_mutex);
-                close(newConnSockfd);
-            }else{
-                pthread_detach(tid);
-                printf("(+)| New connection accepted. Client %d (fd: %d).\n",i,newConnSockfd);
-            }
-        }
-    }
-}
-
-void* handleGuiIncoming(void* arg){
-    (void)arg;
-    char gui_message[MAX_BUFSIZE];
-
-    while(1){
-        if(dequeue(&queue_from_gui, gui_message, MAX_BUFSIZE) == 0){
-            printf("(I)| Message from GUI: %s\n", gui_message);
-
-            if(strncmp(gui_message, "/exit", 5) == 0){
-                printf("(I)| Server shutdown via /exit command.\n");
-                //For now just logging
-            }else if(strncmp(gui_message, "/chat ", 6) == 0){
-                const char* chat_context = gui_message + 6;
-
-                char broadcast_msg[MAX_BUFSIZE];
-                snprintf(broadcast_msg, sizeof(broadcast_msg), "%s\n", chat_context);
-                chat(broadcast_msg, -1);
-            }
-            //... other commands
-        }
-    }
-    pthread_exit(NULL);
-}
-
-int main(int argc,char** argv){
-    if(argc < 2){
-        fprintf(stderr, "(-)| Port number not provided! Program terminated..\n");
-        exit(1);
-    }
-    int port = atoi(argv[1]);
-    int listen_sockfd = start_listening(port);
-    pthread_t ws_tid, gui_in_tid; //ws server thread
-
-    init_queue(&queue_to_gui);
-    init_queue(&queue_from_gui);
-    
-    if(pthread_create(&ws_tid, NULL, &start_websocket_server, NULL) != 0){
-        fprintf(stderr, "(E)| Failed to create WebSocket server thread!\n");
-        close(listen_sockfd);
-        pthread_mutex_destroy(&clients_mutex);
+    if (room_init(&room, SERVER_DEFAULT_MAX_CLIENTS) < 0) {
+        fprintf(stderr, "out of memory\n");
         return 1;
     }
 
-    if(pthread_create(&gui_in_tid, NULL, &handleGuiIncoming, NULL) != 0){
-        fprintf(stderr, "(E)| Failed to create GUI incoming handler thread!\n");
-        close(listen_sockfd);
-        pthread_mutex_destroy(&clients_mutex);
+    listener.fd = net_listen(port, SERVER_LISTEN_BACKLOG);
+    if (listener.fd < 0) {
+        perror("listen");
         return 1;
     }
 
-    startServerLoop(listen_sockfd);
-    pthread_join(ws_tid, NULL); // wait for ws server thread to finish
-    close(listen_sockfd);
-    pthread_mutex_destroy(&clients_mutex);
-    printf("(-)| Server determinated!\n");
+    epfd = epoll_create1(EPOLL_CLOEXEC);
+    if (epfd < 0) {
+        perror("epoll_create1");
+        return 1;
+    }
+    struct epoll_event ev = { .events = EPOLLIN, .data.ptr = &listener };
+    if (epoll_ctl(epfd, EPOLL_CTL_ADD, listener.fd, &ev) < 0) {
+        perror("epoll_ctl");
+        return 1;
+    }
+
+    log_info("listening on port %d (max %d clients)", port, SERVER_DEFAULT_MAX_CLIENTS);
+    run();
+
+    close(epfd);
+    close(listener.fd);
+    room_free(&room);
     return 0;
 }

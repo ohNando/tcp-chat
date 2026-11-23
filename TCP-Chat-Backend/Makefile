@@ -16,7 +16,7 @@ CLIENT_BIN = $(BIN_DIR)/client
 COMMON_OBJ = $(OBJ_DIR)/utility.o $(OBJ_DIR)/network.o
 PROTO_OBJ  = $(OBJ_DIR)/bytebuf.o $(OBJ_DIR)/frame.o $(OBJ_DIR)/framer.o $(OBJ_DIR)/message.o $(OBJ_DIR)/validate.o
 CORE_OBJ   = $(OBJ_DIR)/conn.o $(OBJ_DIR)/room.o
-SERVER_OBJ = $(OBJ_DIR)/server.o $(OBJ_DIR)/gui_bridge.o $(OBJ_DIR)/queue.o $(COMMON_OBJ)
+SERVER_OBJ = $(OBJ_DIR)/server.o $(COMMON_OBJ) $(PROTO_OBJ) $(CORE_OBJ)
 CLIENT_OBJ = $(OBJ_DIR)/client.o $(COMMON_OBJ)
 DEPS       = $(wildcard $(OBJ_DIR)/*.d $(TEST_BIN_DIR)/*.d)
 
@@ -45,7 +45,7 @@ $(OBJ_DIR)/%.o: $(SRC_DIR)/%.c | $(OBJ_DIR)
 	$(CC) $(CFLAGS) -c $< -o $@
 
 $(SERVER_BIN): $(SERVER_OBJ) | $(BIN_DIR)
-	$(CC) -o $@ $^ $(LDLIBS) -lwebsockets
+	$(CC) -o $@ $^ $(LDLIBS)
 
 $(CLIENT_BIN): $(CLIENT_OBJ) | $(BIN_DIR)
 	$(CC) -o $@ $^ $(LDLIBS)
