@@ -15,12 +15,8 @@ pull request to `develop`. See [CONTRIBUTING.md](../CONTRIBUTING.md).
 - **v4 (appearance):** messaging-app look on web and desktop, six themes,
   accent and bubble colors, wallpapers and custom images (dim, blur), text
   size, compact mode, emoji picker, unread count and notifications. The
-  desktop app matches the web client's fonts, sizes and layout.
-
-## Next
-
-- [ ] Refresh the screenshots in `docs/images/` (several themes, a wallpaper,
-      the settings panel, a DM) and describe themes and settings in the READMEs.
+  desktop app matches the web client's fonts, sizes and layout. Screenshots
+  and READMEs are up to date.
 
 ## Ideas, in suggested order
 
