@@ -9,6 +9,8 @@
 
 #include "imgui.h"
 
+static const ImVec4 DM_COLOR(0.72f, 0.55f, 1.0f, 1.0f);
+
 static double now_s() {
     using namespace std::chrono;
     return duration<double>(steady_clock::now().time_since_epoch()).count();
@@ -162,7 +164,7 @@ void App::drawChatScreen() {
     drawStatusBar();
     const float users_w = 200.0f;
     const float input_h = ImGui::GetFrameHeightWithSpacing() + 6.0f;
-    const float typing_h = ImGui::GetTextLineHeightWithSpacing();
+    const float typing_h = ImGui::GetTextLineHeightWithSpacing() * (dmTarget() ? 2.0f : 1.0f);
     const float body_h = ImGui::GetContentRegionAvail().y - input_h - typing_h;
     const float spacing = ImGui::GetStyle().ItemSpacing.x;
 
@@ -176,6 +178,7 @@ void App::drawChatScreen() {
     ImGui::SameLine();
     drawUsers(body_h);
     drawTyping();
+    drawDmBanner();
     drawInput();
 }
 
@@ -186,13 +189,31 @@ void App::drawUsers(float height) {
 
     ImGui::TextDisabled("ONLINE - %zu", users.size());
     ImGui::Separator();
+    bool any_dm = false;
     for (const std::string& u : users) {
         ImGui::TextColored(ImVec4(0.35f, 0.85f, 0.45f, 1.0f), "*");
         ImGui::SameLine();
-        if (u == client_.name())
+        if (u == client_.name()) {
             ImGui::Text("%s (you)", u.c_str());
-        else
+        } else if (client_.canDm(u)) {
+            // Click to write privately (end-to-end encrypted); click again to go back.
+            any_dm = true;
+            ImGui::PushStyleColor(ImGuiCol_Text, DM_COLOR);
+            std::string label = u + " [dm]";
+            if (ImGui::Selectable(label.c_str(), dm_target_ == u)) {
+                dm_target_ = dm_target_ == u ? "" : u;
+                focus_input_ = true;
+            }
+            ImGui::PopStyleColor();
+        } else {
             ImGui::TextUnformatted(u.c_str());
+        }
+    }
+    if (any_dm) {
+        ImGui::Spacing();
+        ImGui::PushTextWrapPos(0.0f);
+        ImGui::TextDisabled("Click a name for an encrypted private message.");
+        ImGui::PopTextWrapPos();
     }
     ImGui::EndChild();
 }
@@ -242,6 +263,13 @@ void App::drawMessages(float height) {
             case ChatLine::Error:
                 ImGui::TextColored(ImVec4(1.0f, 0.45f, 0.45f, 1.0f), "%s", l.text.c_str());
                 break;
+            case ChatLine::Dm:
+                ImGui::TextDisabled("%s", clock_text(l.timestamp).c_str());
+                ImGui::SameLine();
+                ImGui::PushStyleColor(ImGuiCol_Text, DM_COLOR);
+                ImGui::TextWrapped("[private] %s -> %s: %s", l.name.c_str(), l.to.c_str(), l.text.c_str());
+                ImGui::PopStyleColor();
+                break;
         }
     }
 
@@ -254,6 +282,22 @@ void App::drawMessages(float height) {
         seen_version_ = v;
     }
     ImGui::EndChild();
+}
+
+const char* App::dmTarget() const {
+    // The recipient may have left (or lost their key) since we picked them.
+    return !dm_target_.empty() && client_.canDm(dm_target_) ? dm_target_.c_str() : nullptr;
+}
+
+void App::drawDmBanner() {
+    const char* to = dmTarget();
+    if (!to) return;
+    ImGui::PushStyleColor(ImGuiCol_Text, DM_COLOR);
+    ImGui::Text("Private message to %s (end-to-end encrypted)   safety number %s", to,
+                client_.safetyWith(to).c_str());
+    ImGui::PopStyleColor();
+    ImGui::SameLine();
+    if (ImGui::SmallButton("back to room")) dm_target_.clear();
 }
 
 void App::drawTyping() {
@@ -281,7 +325,7 @@ void App::drawInput() {
                                           ImGuiInputTextFlags_EnterReturnsTrue);
     if (ImGui::IsItemEdited()) {
         bool has_text = std::strspn(input_, " \t") != std::strlen(input_);
-        client_.notifyTyping(has_text);
+        if (!dmTarget()) client_.notifyTyping(has_text); // never announce typing a DM
     }
     ImGui::SameLine();
     if (ImGui::Button("Send", ImVec2(button_w, 0)) || enter) submitInput();
@@ -301,7 +345,9 @@ void App::submitInput() {
         leave();
     else if (text == "/users")
         client_.requestUsers();
-    else if (!client_.sendText(text))
+    else if (const char* to = dmTarget()) {
+        if (!client_.sendDm(to, text)) return;
+    } else if (!client_.sendText(text))
         return; // keep the text so the user can fix it
     input_[0] = '\0';
 }

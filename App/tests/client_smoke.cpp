@@ -44,6 +44,11 @@ int main(int argc, char** argv) {
     if (!mkdtemp(tmpl)) return 1;
     std::string known = std::string(tmpl) + "/known_servers";
     setenv("TCPCHAT_KNOWN_SERVERS", known.c_str(), 1);
+    // Never touch the user's real key or pinned peers.
+    std::string peers = std::string(tmpl) + "/known_peers";
+    std::string key_a = std::string(tmpl) + "/a.key", key_b = std::string(tmpl) + "/b.key";
+    setenv("TCPCHAT_KNOWN_PEERS", peers.c_str(), 1);
+    setenv("TCPCHAT_USER_KEY", key_a.c_str(), 1);
 
     const std::string host = argv[1];
     const int port = std::atoi(argv[2]);
@@ -70,6 +75,24 @@ int main(int argc, char** argv) {
             "second client with a taken name is refused");
     std::printf("    (%s)\n", c2.lastError().c_str());
 
+    ChatClient partner(key_b);
+    partner.connect(host, port, "partner");
+    REQUIRE(pump_until(partner, [&] { return partner.state() == ConnState::Chatting; }), "a second user joins");
+    REQUIRE(pump_until(c, [&] { c.poll(); partner.poll(); return c.canDm("partner") && partner.canDm("desktop"); }),
+            "both learn each other's private-message key");
+    REQUIRE(c.safetyWith("partner") == partner.safetyWith("desktop") && !c.safetyWith("partner").empty(),
+            "both see the same safety number");
+
+    c.sendDm("partner", "sadece sana, sifreli");
+    auto has_dm = [](ChatClient& who, bool own) {
+        for (auto& l : who.lines())
+            if (l.kind == ChatLine::Dm && l.own == own && l.text == "sadece sana, sifreli") return true;
+        return false;
+    };
+    REQUIRE(pump_until(partner, [&] { c.poll(); return has_dm(partner, false); }), "the recipient decrypts the DM");
+    REQUIRE(pump_until(c, [&] { partner.poll(); return has_dm(c, true); }), "the sender decrypts its own echo");
+    partner.quit();
+
     c.quit();
     REQUIRE(c.state() == ConnState::Disconnected, "quit disconnects");
 
@@ -82,7 +105,7 @@ int main(int argc, char** argv) {
     REQUIRE(pump_until(c3, [&] { return c3.identityChanged(); }), "changed server key is detected");
     REQUIRE(pump_until(c3, [&] { return c3.state() == ConnState::Disconnected; }), "and the connection is refused");
 
-    std::remove(known.c_str());
+    for (const std::string& f : { known, peers, key_a, key_b }) std::remove(f.c_str());
     rmdir(tmpl);
     std::printf("  all passed\n");
     return 0;

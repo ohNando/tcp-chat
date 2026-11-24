@@ -4,6 +4,7 @@
 #include <cerrno>
 #include <chrono>
 #include <cstring>
+#include <ctime>
 
 #include <fcntl.h>
 #include <netdb.h>
@@ -28,15 +29,26 @@ static std::string fingerprint_of(const unsigned char pk[IDENTITY_PK_BYTES]) {
     return fp;
 }
 
-ChatClient::ChatClient() : scratch_(new message_t), plain_(RECORD_MAX_BODY) {
+ChatClient::ChatClient(const std::string& user_key_path)
+    : scratch_(new message_t), plain_(RECORD_MAX_BODY) {
     framer_init(&in_, RECORD_MAX_BODY);
     char path[KNOWN_PATH_MAX];
     if (known_servers_path(path, sizeof(path)) == 0) known_path_ = path;
+
+    char key_path[CONFIG_PATH_MAX];
+    int created = 0;
+    if (!user_key_path.empty())
+        std::snprintf(key_path, sizeof(key_path), "%s", user_key_path.c_str());
+    else if (::user_key_path(key_path, sizeof(key_path)) < 0)
+        key_path[0] = '\0';
+    have_key_ = key_path[0] && user_key_load_or_create(&my_key_, key_path, &created) == 0;
+    if (!have_key_) addLine(ChatLine::Error, "Cannot load the private-message key; DMs are disabled.");
 }
 
 ChatClient::~ChatClient() {
     closeSocket();
     framer_free(&in_);
+    user_key_wipe(&my_key_);
 }
 
 /* ------------------------------------------------------------------ */
@@ -95,6 +107,7 @@ void ChatClient::closeSocket() {
     framer_init(&in_, RECORD_MAX_BODY);
     tx_seq_ = 0;
     users_.clear();
+    peers_.clear();
     typing_.clear();
     typing_active_ = false;
 }
@@ -291,6 +304,18 @@ void ChatClient::handleMessage(const message_t& m) {
             state_ = ConnState::Chatting;
             last_error_.clear();
             addLine(ChatLine::System, m.text);
+            if (have_key_) {
+                static message_t key;
+                message_init(&key, FT_KEY);
+                std::memcpy(key.key, my_key_.pk, DM_KEY_BYTES);
+                sendMessage(key);
+            }
+            break;
+        case FT_PEER_KEY:
+            onPeerKey(m);
+            break;
+        case FT_DM_RECV:
+            onDm(m);
             break;
         case FT_CHAT: {
             bool history = (m.flags & FLAG_HISTORY) != 0;
@@ -313,6 +338,7 @@ void ChatClient::handleMessage(const message_t& m) {
             break;
         case FT_LEAVE:
             typing_.erase(m.name);
+            peers_.erase(m.name);
             users_.erase(std::remove(users_.begin(), users_.end(), m.name), users_.end());
             addLine(ChatLine::System, std::string(m.name) + " left the chat");
             break;
@@ -357,6 +383,65 @@ bool ChatClient::sendText(const std::string& text) {
     std::snprintf(scratch_->text, sizeof(scratch_->text), "%s", text.c_str());
     typing_active_ = false; // the message itself tells others we stopped
     return sendMessage(*scratch_);
+}
+
+/* Keys are pinned per server and name (known_peers); a different key for
+ * the same name gets a warning with the new safety number. */
+void ChatClient::onPeerKey(const message_t& m) {
+    std::array<uint8_t, DM_KEY_BYTES> key;
+    std::memcpy(key.data(), m.key, DM_KEY_BYTES);
+
+    char path[CONFIG_PATH_MAX];
+    std::string who = hostport_ + "/" + m.name;
+    if (config_path("known_peers", "TCPCHAT_KNOWN_PEERS", path, sizeof(path)) == 0) {
+        unsigned char pinned[DM_KEY_BYTES];
+        int found = known_servers_lookup(path, who.c_str(), pinned);
+        if (found == 0) {
+            known_servers_add(path, who.c_str(), m.key);
+        } else if (found == 1 && sodium_memcmp(pinned, m.key, DM_KEY_BYTES) != 0) {
+            peers_[m.name] = key;
+            addLine(ChatLine::Error, std::string("The private-message key of ") + m.name +
+                    " has CHANGED. They may have a new device, or the server is intercepting. "
+                    "Compare the new safety number: " + safetyWith(m.name));
+            known_servers_add(path, who.c_str(), m.key);
+        }
+    }
+    peers_[m.name] = key;
+}
+
+void ChatClient::onDm(const message_t& m) {
+    // Our own echo is "to" someone else; their key opens it too.
+    std::string other = name_ == m.name ? m.to : m.name;
+    auto it = peers_.find(other);
+    uint64_t sent_at;
+    static char text[TEXT_MAX_LEN + 1];
+    if (!have_key_ || it == peers_.end() ||
+        dm_open(&my_key_, it->second.data(), m.nonce, m.box, m.box_len, &sent_at, text) < 0) {
+        addLine(ChatLine::Error, std::string("Could not decrypt a private message from ") + m.name + ".");
+        return;
+    }
+    addLine(ChatLine::Dm, text, m.name, m.timestamp, name_ == m.name, false, m.to);
+}
+
+bool ChatClient::sendDm(const std::string& to, const std::string& text) {
+    auto it = peers_.find(to);
+    if (state_ != ConnState::Chatting || !have_key_ || it == peers_.end()) return false;
+    message_init(scratch_.get(), FT_DM);
+    std::snprintf(scratch_->to, sizeof(scratch_->to), "%s", to.c_str());
+    if (dm_seal(&my_key_, it->second.data(), (uint64_t)std::time(nullptr) * 1000u, text.c_str(),
+                scratch_->nonce, scratch_->box, &scratch_->box_len) < 0) {
+        addLine(ChatLine::Error, "Message is empty, too long or has control characters.");
+        return false;
+    }
+    return sendMessage(*scratch_);
+}
+
+std::string ChatClient::safetyWith(const std::string& name) const {
+    auto it = peers_.find(name);
+    if (!have_key_ || it == peers_.end()) return "";
+    char out[DM_SAFETY_STR_LEN];
+    dm_safety_number(my_key_.pk, it->second.data(), out);
+    return out;
 }
 
 void ChatClient::notifyTyping(bool has_text) {
@@ -405,8 +490,8 @@ bool ChatClient::alreadyShown(const message_t& chat) const {
 }
 
 void ChatClient::addLine(ChatLine::Kind kind, std::string text, std::string name,
-                         uint64_t ts, bool own, bool history) {
+                         uint64_t ts, bool own, bool history, std::string to) {
     if (lines_.size() >= MAX_LINES) lines_.erase(lines_.begin(), lines_.begin() + MAX_LINES / 10);
-    lines_.push_back(ChatLine{ kind, std::move(name), std::move(text), ts, own, history });
+    lines_.push_back(ChatLine{ kind, std::move(name), std::move(to), std::move(text), ts, own, history });
     lines_version_++;
 }

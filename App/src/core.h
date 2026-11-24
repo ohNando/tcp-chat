@@ -9,4 +9,6 @@ extern "C" {
 #include "identity.h"
 #include "secure.h"
 #include "known_servers.h"
+#include "config.h"
+#include "dm.h"
 }

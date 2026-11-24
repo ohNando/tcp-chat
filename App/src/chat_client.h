@@ -5,6 +5,7 @@
 // the UI never freezes and no threads or locks are needed.
 #pragma once
 
+#include <array>
 #include <cstdint>
 #include <map>
 #include <memory>
@@ -22,8 +23,9 @@ enum class ConnState {
 };
 
 struct ChatLine {
-    enum Kind { Chat, System, Error } kind;
-    std::string name;   // Chat only
+    enum Kind { Chat, System, Error, Dm } kind;
+    std::string name;   // Chat and Dm: the sender
+    std::string to;     // Dm only
     std::string text;
     uint64_t timestamp; // ms since epoch, Chat only
     bool own;
@@ -32,7 +34,9 @@ struct ChatLine {
 
 class ChatClient {
 public:
-    ChatClient();
+    // `user_key_path` overrides where the private-message key lives
+    // (default: ~/.config/tcp-chat/user.key); tests use it for two users.
+    explicit ChatClient(const std::string& user_key_path = "");
     ~ChatClient();
     ChatClient(const ChatClient&) = delete;
     ChatClient& operator=(const ChatClient&) = delete;
@@ -44,6 +48,11 @@ public:
 
     bool sendText(const std::string& text);
     bool requestUsers();
+
+    // End-to-end encrypted private messages.
+    bool canDm(const std::string& name) const { return peers_.count(name) != 0; }
+    bool sendDm(const std::string& to, const std::string& text);
+    std::string safetyWith(const std::string& name) const;
 
     // Typing indicator. Call on every edit of the input box; it sends
     // TYPING at most every 2 s, and "stopped" when the box is cleared.
@@ -87,7 +96,9 @@ private:
     void fail(const std::string& why);
     bool alreadyShown(const message_t& chat) const;
     void addLine(ChatLine::Kind kind, std::string text, std::string name = {},
-                 uint64_t ts = 0, bool own = false, bool history = false);
+                 uint64_t ts = 0, bool own = false, bool history = false, std::string to = {});
+    void onPeerKey(const message_t& m);
+    void onDm(const message_t& m);
     void closeSocket();
 
     int fd_ = -1;
@@ -111,6 +122,10 @@ private:
     std::vector<ChatLine> lines_;
     uint64_t lines_version_ = 0;
     std::string last_error_;
+
+    user_key_t my_key_{};
+    bool have_key_ = false;
+    std::map<std::string, std::array<uint8_t, DM_KEY_BYTES>> peers_;
 
     std::map<std::string, double> typing_;  // name -> expiry (steady seconds)
     bool typing_active_ = false;

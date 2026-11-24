@@ -28,6 +28,8 @@ private:
     void drawMessages(float height);
     void drawInput();
     void drawTyping();
+    void drawDmBanner();
+    const char* dmTarget() const;
     void drawUsers(float height);
     void drawStatusBar();
     void leave();
@@ -52,4 +54,5 @@ private:
     char input_[TEXT_MAX_LEN + 1] = "";
     bool focus_input_ = true;
     uint64_t seen_version_ = 0;   // lines version drawn last frame
+    std::string dm_target_;       // private-message recipient, empty = room
 };
