@@ -60,11 +60,12 @@ static bool save_ppm(const char* path, int w, int h) {
 
 static void usage(const char* prog) {
     std::fprintf(stderr,
-                 "Usage: %s [--connect host port name] [--say text] [--trust]\n"
+                 "Usage: %s [--connect host port name] [--say text] [--trust] [--settings]\n"
                  "          [--screenshot out.ppm --wait seconds]\n"
                  "  --connect     connect on start-up\n"
                  "  --say         send a message once joined\n"
                  "  --trust       accept an unknown server key without asking\n"
+                 "  --settings    open the settings window on start-up\n"
                  "  --screenshot  render in a hidden window for --wait seconds, save, exit\n",
                  prog);
 }
@@ -84,6 +85,8 @@ int main(int argc, char** argv) {
             autorun.say = argv[++i];
         } else if (!std::strcmp(argv[i], "--trust")) {
             autorun.trust = true;
+        } else if (!std::strcmp(argv[i], "--settings")) {
+            autorun.open_settings = true;
         } else if (!std::strcmp(argv[i], "--screenshot") && i + 1 < argc) {
             screenshot = argv[++i];
         } else if (!std::strcmp(argv[i], "--wait") && i + 1 < argc) {

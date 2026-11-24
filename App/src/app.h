@@ -16,6 +16,7 @@ struct AutoRun {
     std::string name;
     std::string say;
     bool trust = false;
+    bool open_settings = false;
 };
 
 class App {
@@ -49,6 +50,8 @@ private:
     Settings settings_;
     std::string settings_path_;
     Palette palette_{};
+    bool settings_open_ = false;
+    bool look_dirty_ = false;   // re-apply the style before the next frame
     bool said_ = false;
 
     // Set once we got into the room; while set, a dropped connection is

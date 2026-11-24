@@ -1,7 +1,6 @@
 #include "theme.h"
 
 #include <cmath>
-#include <cstring>
 
 namespace {
 
@@ -135,7 +134,7 @@ void apply_style(const Palette& p, const Settings& s) {
     c[ImGuiCol_ChildBg] = with_alpha(p.panel, 0);
     c[ImGuiCol_PopupBg] = p.panel;
     c[ImGuiCol_Border] = p.border;
-    c[ImGuiCol_FrameBg] = p.panel_alt;
+    c[ImGuiCol_FrameBg] = mix(p.panel_alt, p.border, 0.6f);
     c[ImGuiCol_FrameBgHovered] = mix(p.panel_alt, p.accent, 0.12f);
     c[ImGuiCol_FrameBgActive] = mix(p.panel_alt, p.accent, 0.2f);
     c[ImGuiCol_TitleBg] = p.panel;

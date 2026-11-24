@@ -9,6 +9,7 @@
 
 #include "imgui.h"
 #include "chat_view.h"
+#include "settings_ui.h"
 
 static const ImVec4 DM_COLOR(0.72f, 0.55f, 1.0f, 1.0f);
 
@@ -39,6 +40,7 @@ static ImVec4 state_color(ConnState s) {
 App::App(const AutoRun& autorun) : autorun_(autorun), settings_path_(settings_path()) {
     settings_load(settings_, settings_path_);
     applyLook();
+    settings_open_ = autorun_.open_settings;
     std::snprintf(host_, sizeof(host_), "%s", settings_.host.c_str());
     port_ = settings_.port;
     std::snprintf(name_, sizeof(name_), "%s", settings_.name.c_str());
@@ -72,6 +74,12 @@ void App::startConnect() {
 }
 
 void App::poll() {
+    // Style changes take effect between frames, never in the middle of one.
+    if (look_dirty_) {
+        applyLook();
+        saveSettings();
+        look_dirty_ = false;
+    }
     client_.poll();
 
     if (client_.state() == ConnState::Chatting) {
@@ -118,10 +126,14 @@ void App::draw() {
     drawTrustPrompt();
     drawIdentityWarning();
     ImGui::End();
+
+    if (draw_settings_window(&settings_open_, settings_, palette_)) look_dirty_ = true;
 }
 
 void App::drawConnectScreen() {
     const float width = 360.0f;
+    ImGui::SetCursorPos(ImVec2(ImGui::GetContentRegionMax().x - 90.0f, ImGui::GetStyle().WindowPadding.y));
+    if (ImGui::Button("Settings", ImVec2(90.0f, 0))) settings_open_ = !settings_open_;
     ImVec2 avail = ImGui::GetContentRegionAvail();
     ImGui::SetCursorPos(ImVec2((avail.x - width) * 0.5f, avail.y * 0.25f));
     ImGui::BeginGroup();
@@ -179,7 +191,9 @@ void App::drawStatusBar() {
     }
 
     const float button_w = 90.0f;
-    ImGui::SameLine(ImGui::GetContentRegionMax().x - button_w);
+    ImGui::SameLine(ImGui::GetContentRegionMax().x - 2 * button_w - ImGui::GetStyle().ItemSpacing.x);
+    if (ImGui::Button("Settings", ImVec2(button_w, 0))) settings_open_ = !settings_open_;
+    ImGui::SameLine();
     if (ImGui::Button("Leave", ImVec2(button_w, 0))) leave();
     ImGui::Separator();
 }

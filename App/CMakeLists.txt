@@ -75,6 +75,7 @@ add_executable(tcp-chat-desktop
   src/settings.cpp
   src/theme.cpp
   src/chat_view.cpp
+  src/settings_ui.cpp
 )
 target_compile_options(tcp-chat-desktop PRIVATE -Wall -Wextra)
 target_link_libraries(tcp-chat-desktop PRIVATE imgui chat_client)
