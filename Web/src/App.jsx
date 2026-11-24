@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 
 import { Status, useChat } from './hooks/useChat'
+import { useSettings } from './theme/useSettings'
 import { NAME_MAX_LEN, TEXT_MAX_LEN } from './protocol/frame'
 import './App.css'
 
@@ -207,6 +208,7 @@ function ChatScreen({ status, me, messages, users, typing, keyedPeers, error, re
 
 export default function App() {
   const chat = useChat()
+  useSettings() // applies the saved theme
 
   if (chat.status === Status.UNTRUSTED) {
     return (

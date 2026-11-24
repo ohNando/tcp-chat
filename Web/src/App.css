@@ -3,7 +3,7 @@
 button {
   font: inherit;
   font-weight: 600;
-  color: #fff;
+  color: var(--accent-text);
   background: var(--accent);
   border: none;
   border-radius: 8px;
@@ -214,11 +214,11 @@ input[type='text']:focus {
 }
 
 .message.dm.own {
-  background: #7c3aed;
+  background: var(--dm);
 }
 
 .message.dm.other {
-  border-color: #7c3aed;
+  border-color: var(--dm);
 }
 
 .message-dm {
@@ -241,7 +241,7 @@ input[type='text']:focus {
   padding: 6px 20px;
   font-size: 0.85rem;
   color: #fff;
-  background: #7c3aed;
+  background: var(--dm);
 }
 
 .dm-banner code {
@@ -357,7 +357,7 @@ input[type='text']:focus {
 
 .user-list li.selected {
   font-weight: 700;
-  color: #7c3aed;
+  color: var(--dm);
 }
 
 .user-list .hint {
