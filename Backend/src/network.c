@@ -28,6 +28,7 @@ int connectToServer(const char* serverIP, int port){
         close(new_sockfd);
         return -1;
     }
+    net_set_nodelay(new_sockfd);
     printf("(+)| Connected to server %s:%d\n",serverIP,port);
 
     return new_sockfd;

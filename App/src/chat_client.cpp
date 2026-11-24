@@ -7,6 +7,7 @@
 
 #include <fcntl.h>
 #include <netdb.h>
+#include <netinet/tcp.h>
 #include <poll.h>
 #include <sys/socket.h>
 #include <unistd.h>
@@ -67,6 +68,8 @@ bool ChatClient::connect(const std::string& host, int port, const std::string& n
         return false;
     }
     fcntl(fd_, F_SETFL, fcntl(fd_, F_GETFL, 0) | O_NONBLOCK);
+    int one = 1; // small, latency sensitive messages: no Nagle
+    setsockopt(fd_, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one));
 
     rc = ::connect(fd_, res->ai_addr, res->ai_addrlen);
     freeaddrinfo(res);

@@ -19,6 +19,7 @@
 #include <fcntl.h>
 #include <getopt.h>
 #include <netdb.h>
+#include <netinet/tcp.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -316,6 +317,8 @@ int main(int argc, char** argv) {
         framer_init(&c->in, RECORD_MAX_BODY);
         c->fd = socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, 0);
         if (c->fd < 0) die("socket");
+        int one = 1;
+        setsockopt(c->fd, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one));
         if (connect(c->fd, ai->ai_addr, ai->ai_addrlen) < 0 && errno != EINPROGRESS) die("connect");
         c->state = C_CONNECTING;
         c->want_out = 1;
