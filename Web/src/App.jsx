@@ -5,6 +5,7 @@ import { useSettings } from './theme/useSettings'
 import { wallpaperCss } from './theme/wallpapers'
 import { alpha } from './theme/themes'
 import { groupMessages } from './chat/groupMessages'
+import { useUnread } from './chat/useUnread'
 import Avatar from './components/Avatar'
 import SettingsPanel from './components/SettingsPanel'
 import EmojiPicker from './components/EmojiPicker'
@@ -294,6 +295,7 @@ export default function App() {
   const chat = useChat()
   const look = useSettings() // also applies the saved theme
   const [settingsOpen, setSettingsOpen] = useState(false)
+  useUnread(chat.messages, chat.me, look.settings.notifications)
   const openSettings = () => setSettingsOpen(true)
   const panel = settingsOpen && (
     <SettingsPanel settings={look.settings} update={look.update} palette={look.palette}

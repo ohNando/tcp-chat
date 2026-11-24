@@ -124,6 +124,36 @@ function Segmented({ options, value, onChange, label }) {
   )
 }
 
+function Notifications({ settings, update }) {
+  const supported = 'Notification' in window
+  const [denied, setDenied] = useState(supported && Notification.permission === 'denied')
+
+  const toggle = async (on) => {
+    if (on && supported && Notification.permission !== 'granted') {
+      const result = await Notification.requestPermission()
+      setDenied(result === 'denied')
+      if (result !== 'granted') return
+    }
+    update({ notifications: on })
+  }
+
+  return (
+    <section>
+      <h3>Notifications</h3>
+      <label className="setting-row">
+        <span>Notify me about private messages and mentions</span>
+        <input type="checkbox" className="toggle" disabled={!supported}
+               checked={settings.notifications && !denied} onChange={(e) => toggle(e.target.checked)} />
+      </label>
+      <p className="note">
+        {!supported ? 'This browser does not support notifications.'
+          : denied ? 'Notifications are blocked for this site in your browser settings.'
+          : 'The tab title always shows how many messages you missed.'}
+      </p>
+    </section>
+  )
+}
+
 export default function SettingsPanel({ settings, update, palette, customWallpaper, setCustomWallpaper,
                                         onClose }) {
   useEffect(() => {
@@ -181,6 +211,8 @@ export default function SettingsPanel({ settings, update, palette, customWallpap
                    onChange={(e) => update({ compact: e.target.checked })} />
           </label>
         </section>
+
+        <Notifications settings={settings} update={update} />
       </aside>
     </div>
   )
