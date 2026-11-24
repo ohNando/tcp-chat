@@ -111,6 +111,19 @@ function Background({ settings, update, palette, customWallpaper, setCustomWallp
   )
 }
 
+function Segmented({ options, value, onChange, label }) {
+  return (
+    <div className="segmented" role="radiogroup" aria-label={label}>
+      {options.map(([id, text]) => (
+        <button key={id} type="button" role="radio" aria-checked={value === id}
+                className={value === id ? 'on' : ''} onClick={() => onChange(id)}>
+          {text}
+        </button>
+      ))}
+    </div>
+  )
+}
+
 export default function SettingsPanel({ settings, update, palette, customWallpaper, setCustomWallpaper,
                                         onClose }) {
   useEffect(() => {
@@ -153,6 +166,21 @@ export default function SettingsPanel({ settings, update, palette, customWallpap
 
         <Background settings={settings} update={update} palette={palette}
                     customWallpaper={customWallpaper} setCustomWallpaper={setCustomWallpaper} />
+
+        <section>
+          <h3>Text &amp; layout</h3>
+          <div className="setting-row">
+            <span>Text size</span>
+            <Segmented label="Text size" value={settings.fontSize}
+                       options={[['small', 'S'], ['medium', 'M'], ['large', 'L']]}
+                       onChange={(fontSize) => update({ fontSize })} />
+          </div>
+          <label className="setting-row">
+            <span>Compact messages</span>
+            <input type="checkbox" className="toggle" checked={settings.compact}
+                   onChange={(e) => update({ compact: e.target.checked })} />
+          </label>
+        </section>
       </aside>
     </div>
   )

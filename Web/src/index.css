@@ -47,3 +47,19 @@ body,
 #root {
   height: 100%;
 }
+
+/* Text size and density, set by useSettings() on <html>. */
+:root[data-font-size='small'] {
+  font-size: 13.5px;
+}
+
+:root[data-font-size='large'] {
+  font-size: 17px;
+}
+
+:root[data-compact='true'] {
+  --radius: 12px;
+  --bubble-pad-y: 4px;
+  --bubble-pad-x: 10px;
+  --group-gap: 6px;
+}
