@@ -135,6 +135,8 @@ static void handle_message(conn_t* c, const message_t* m) {
             message_init(&reply, FT_PONG);
             room_send_to(c, &reply);
             break;
+        case FT_PONG:
+            break; /* answer to our heartbeat; receiving it is all that matters */
         case FT_QUIT:
             c->close_after_flush = 1;
             break;
