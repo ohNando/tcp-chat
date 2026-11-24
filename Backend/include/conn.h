@@ -81,6 +81,8 @@ typedef struct conn {
     uint32_t tx_seq;
     int registered;
     char name[NAME_MAX_LEN + 1];
+    int has_key;                  /* sent KEY: can send and receive DMs */
+    uint8_t user_pk[DM_KEY_BYTES];
 
     int close_after_flush;        /* QUIT or protocol error */
     int want_close;               /* close at the end of this loop turn */

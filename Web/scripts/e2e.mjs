@@ -16,6 +16,7 @@ import sodiumModule from 'libsodium-wrappers'
 
 import { FT, ERR, FLAG, encodeMessage, decodeMessage } from '../src/protocol/frame.js'
 import { SecureChannel, SecureError, fingerprint } from '../src/protocol/secure.js'
+import { seal, open } from '../src/protocol/dm.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const SERVER = join(here, '../../Backend/bin/server')
@@ -243,6 +244,35 @@ step('duplicate names are rejected', async () => {
 step('users request lists both members', async () => {
   bob.send({ type: FT.USERS_REQ })
   assert.deepEqual((await bob.expect(FT.USERS)).users, ['alice', 'bob'])
+})
+
+step('private messages are end-to-end encrypted', async () => {
+  const aliceKey = sodium.crypto_box_keypair()
+  const bobKey = sodium.crypto_box_keypair()
+  alice.send({ type: FT.KEY, key: aliceKey.publicKey })
+  bob.send({ type: FT.KEY, key: bobKey.publicKey })
+  const bobSeesAlice = await bob.waitFor(FT.PEER_KEY)
+  assert.equal(bobSeesAlice.name, 'alice')
+  assert.deepEqual([...bobSeesAlice.key], [...aliceKey.publicKey])
+  assert.equal((await alice.waitFor(FT.PEER_KEY)).name, 'bob')
+
+  const secret = 'sadece Bob okuyabilir 🔐'
+  const { nonce, box } = seal(sodium, aliceKey.privateKey, bobKey.publicKey, Date.now(), secret)
+  alice.send({ type: FT.DM, to: 'BOB', nonce, box }) // names are case-insensitive
+
+  const got = await bob.waitFor(FT.DM_RECV)
+  assert.deepEqual([got.name, got.to], ['alice', 'bob'])
+  assert.deepEqual([...got.box], [...box], 'the server relays the box unchanged')
+  assert.equal(open(sodium, bobKey.privateKey, aliceKey.publicKey, got.nonce, got.box).text, secret)
+
+  const echo = await alice.waitFor(FT.DM_RECV)
+  assert.equal(open(sodium, aliceKey.privateKey, bobKey.publicKey, echo.nonce, echo.box).text, secret)
+  assert.ok(!serverLog.includes('sadece Bob'), 'the server never sees or logs the text')
+})
+
+step('a private message to an unknown user is refused', async () => {
+  alice.send({ type: FT.DM, to: 'nobody', nonce: new Uint8Array(24), box: new Uint8Array(20) })
+  assert.equal((await alice.expect(FT.ERR)).code, ERR.NO_SUCH_USER)
 })
 
 step('quit ends the stream and others see LEAVE', async () => {

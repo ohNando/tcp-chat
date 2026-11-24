@@ -127,9 +127,19 @@ static void handle_name(conn_t* c, const message_t* in) {
              c->name, room_member_count(&room));
     room_send_to(c, &m);
 
-    /* New members get the current list right away. */
+    /* New members get the current list right away... */
     room_fill_users(&room, &m);
     room_send_to(c, &m);
+
+    /* ...and the DM keys of everyone who already published one. */
+    for (size_t i = 0; i < room.max; i++) {
+        conn_t* o = room.slots[i];
+        if (!o || o == c || !o->registered || !o->has_key) continue;
+        message_init(&m, FT_PEER_KEY);
+        memcpy(m.name, o->name, sizeof(m.name));
+        memcpy(m.key, o->user_pk, DM_KEY_BYTES);
+        room_send_to(c, &m);
+    }
 
     message_init(&m, FT_JOIN);
     memcpy(m.name, c->name, sizeof(m.name));
@@ -152,6 +162,48 @@ static void handle_chat(conn_t* c, const message_t* in) {
      * clients render their own messages only when they come back. */
     room_broadcast(&room, &out, NULL);
     history_add(&out);
+}
+
+/* Stores the member's public DM key and announces it to everybody else. */
+static void handle_key(conn_t* c, const message_t* in) {
+    memcpy(c->user_pk, in->key, DM_KEY_BYTES);
+    c->has_key = 1;
+
+    message_t m;
+    message_init(&m, FT_PEER_KEY);
+    memcpy(m.name, c->name, sizeof(m.name));
+    memcpy(m.key, c->user_pk, DM_KEY_BYTES);
+    room_broadcast(&room, &m, c);
+}
+
+/* Relays an end-to-end encrypted private message. The server cannot read
+ * it: it only checks who it is for, then hands the box to the recipient
+ * and echoes it to the sender. Deliberately not logged. */
+static void handle_dm(conn_t* c, const message_t* in) {
+    if (!c->has_key) {
+        send_error(c, ERR_NO_KEY, "Send your key before private messages.");
+        return;
+    }
+    conn_t* to = room_find_name(&room, in->to);
+    if (!to) {
+        send_error(c, ERR_NO_SUCH_USER, "Nobody with that name is here.");
+        return;
+    }
+    if (!to->has_key) {
+        send_error(c, ERR_NO_KEY, "That user cannot receive private messages yet.");
+        return;
+    }
+
+    message_t m;
+    message_init(&m, FT_DM_RECV);
+    m.timestamp = now_ms();
+    memcpy(m.name, c->name, sizeof(m.name));
+    memcpy(m.to, to->name, sizeof(m.to));
+    memcpy(m.nonce, in->nonce, DM_NONCE_BYTES);
+    m.box_len = in->box_len;
+    memcpy(m.box, in->box, in->box_len);
+    room_send_to(to, &m);
+    if (to != c) room_send_to(c, &m);
 }
 
 static void handle_message(conn_t* c, const message_t* m) {
@@ -180,6 +232,12 @@ static void handle_message(conn_t* c, const message_t* m) {
             break;
         case FT_PONG:
             break; /* answer to our heartbeat; receiving it is all that matters */
+        case FT_KEY:
+            handle_key(c, m);
+            break;
+        case FT_DM:
+            handle_dm(c, m);
+            break;
         case FT_TYPING:
             message_init(&reply, FT_USER_TYPING);
             memcpy(reply.name, c->name, sizeof(reply.name));
