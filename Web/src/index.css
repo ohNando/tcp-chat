@@ -63,3 +63,9 @@ body,
   --bubble-pad-x: 10px;
   --group-gap: 6px;
 }
+
+/* Thin scrollbars in the theme's colors (the default is bright on dark). */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
