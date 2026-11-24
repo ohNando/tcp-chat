@@ -45,8 +45,14 @@ Open <http://localhost:5173>. Vite proxies `/ws` to the server on port 8081.
 | `npm run lint` | ESLint |
 | `npm test` | unit tests (`node --test`) for the codec and pinning |
 | `npm run e2e` | starts `../Backend/bin/server` and chats over TCP and WebSocket |
+| `npm run ui` | serves `dist/` from the C server and drives it in headless Firefox |
 
-`npm run e2e` needs the server binary: run `make` in `Backend` first.
+`npm run e2e` and `npm run ui` need the server binary: run `make` in
+`Backend` first. `npm run ui` also needs Firefox and a fresh `npm run build`.
+
+`npm run build` also writes brotli (`.br`) and gzip (`.gz`) copies of the
+larger files; the server sends those to browsers that accept them, and lets
+browsers cache the hashed files under `/assets/` for a year.
 
 ## How it works
 
