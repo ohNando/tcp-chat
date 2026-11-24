@@ -89,6 +89,30 @@ await step('the indicator disappears when the message is sent', async () => {
   await other.waitFor(`!${textOf('.typing')}.includes('typing')`)
 })
 
+await step('a private message reaches only its recipient, marked as encrypted', async () => {
+  // Mehmet picks Ayşe in the user list and writes to her.
+  await other.waitFor(`!!document.querySelector('.user-dm')`)
+  await other.click('.user-dm')
+  await other.waitFor(`${textOf('.dm-banner')}.includes('Ayşe')`)
+  await other.type('.input-form input', 'sadece sana')
+  await other.click('.input-form button')
+
+  await ff.waitFor(`[...document.querySelectorAll('.message.dm')].some(e =>
+    e.textContent.includes('sadece sana') && e.textContent.includes('from Mehmet'))`)
+  await other.waitFor(`[...document.querySelectorAll('.message.dm.own')].some(e =>
+    e.textContent.includes('to Ayşe'))`)
+  assert.ok(!log.includes('sadece sana'), 'the server must not see the text')
+})
+
+await step('both sides show the same safety number', async () => {
+  await ff.click('.user-dm')
+  await ff.waitFor(`!!document.querySelector('.dm-banner code')`)
+  const a = await ff.eval(`document.querySelector('.dm-banner code').textContent`)
+  const b = await other.eval(`document.querySelector('.dm-banner code').textContent`)
+  assert.match(a, /^(\d{5} ){7}\d{5}$/)
+  assert.equal(a, b)
+})
+
 if (process.env.SCREENSHOT && !failed) await ff.screenshot(process.env.SCREENSHOT)
 
 await ff.close()

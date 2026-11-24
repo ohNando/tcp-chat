@@ -3,18 +3,20 @@
 // match. `storage` is localStorage in the browser (injectable for tests).
 
 const KEY = 'tcpchat.known_servers'
+// Users' private-message keys, per "host/name" (see useChat.js).
+export const PEER_PINS = 'tcpchat.known_peers'
 
-function load(storage) {
+function load(storage, key = KEY) {
   try {
-    const pins = JSON.parse(storage.getItem(KEY) ?? '{}')
+    const pins = JSON.parse(storage.getItem(key) ?? '{}')
     return pins && typeof pins === 'object' ? pins : {}
   } catch {
     return {}
   }
 }
 
-function save(storage, pins) {
-  storage.setItem(KEY, JSON.stringify(pins))
+function save(storage, pins, key = KEY) {
+  storage.setItem(key, JSON.stringify(pins))
 }
 
 export const Pin = Object.freeze({
@@ -24,24 +26,24 @@ export const Pin = Object.freeze({
 })
 
 /** Checks (and on first use stores) the fingerprint for `host`. */
-export function checkPin(storage, host, fp) {
-  const pins = load(storage)
+export function checkPin(storage, host, fp, key = KEY) {
+  const pins = load(storage, key)
   const known = pins[host]
   if (!known) {
     pins[host] = fp
-    save(storage, pins)
+    save(storage, pins, key)
     return Pin.NEW
   }
   return known === fp ? Pin.MATCH : Pin.MISMATCH
 }
 
-export function pinnedFingerprint(storage, host) {
-  return load(storage)[host] ?? null
+export function pinnedFingerprint(storage, host, key = KEY) {
+  return load(storage, key)[host] ?? null
 }
 
 /** Forgets a host so the next connection pins its new key. */
-export function forgetPin(storage, host) {
-  const pins = load(storage)
+export function forgetPin(storage, host, key = KEY) {
+  const pins = load(storage, key)
   delete pins[host]
-  save(storage, pins)
+  save(storage, pins, key)
 }

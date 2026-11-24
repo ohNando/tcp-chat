@@ -213,6 +213,48 @@ input[type='text']:focus {
   border-bottom-left-radius: 4px;
 }
 
+.message.dm.own {
+  background: #7c3aed;
+}
+
+.message.dm.other {
+  border-color: #7c3aed;
+}
+
+.message-dm {
+  font-size: 0.75rem;
+  font-weight: 600;
+  opacity: 0.85;
+  margin-bottom: 2px;
+}
+
+.message.server.error-line {
+  color: var(--danger);
+  font-style: normal;
+}
+
+.dm-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 20px;
+  font-size: 0.85rem;
+  color: #fff;
+  background: #7c3aed;
+}
+
+.dm-banner code {
+  font-family: ui-monospace, 'SFMono-Regular', Menlo, monospace;
+  font-size: 0.8rem;
+}
+
+.dm-banner button {
+  background: transparent;
+  padding: 0 6px;
+  font-size: 1.2rem;
+}
+
 .message.history {
   opacity: 0.6;
 }
@@ -297,6 +339,31 @@ input[type='text']:focus {
   height: 8px;
   border-radius: 50%;
   background: var(--ok);
+}
+
+.user-list .user-dm {
+  font: inherit;
+  font-weight: 400;
+  color: inherit;
+  background: none;
+  padding: 0;
+  text-align: left;
+}
+
+.user-list .user-dm:hover {
+  background: none;
+  text-decoration: underline;
+}
+
+.user-list li.selected {
+  font-weight: 700;
+  color: #7c3aed;
+}
+
+.user-list .hint {
+  margin-top: 12px;
+  font-size: 0.75rem;
+  color: var(--muted);
 }
 
 .user-list .you {

@@ -2,7 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { FT, FLAG, encodeMessage, decodeMessage } from '../protocol/frame.js'
 import { SecureChannel, fingerprint } from '../protocol/secure.js'
-import { Pin, checkPin, forgetPin, pinnedFingerprint } from '../protocol/pins.js'
+import { Pin, PEER_PINS, checkPin, forgetPin, pinnedFingerprint } from '../protocol/pins.js'
+import { loadOrCreateUserKey, seal, open, safetyNumber } from '../protocol/dm.js'
 
 export const Status = Object.freeze({
   CONNECTING: 'connecting',   // socket opening / handshake running
@@ -46,6 +47,7 @@ export function useChat() {
   const [serverFingerprint, setServerFingerprint] = useState(null)
   const [reconnectIn, setReconnectIn] = useState(null)
   const [typing, setTyping] = useState({}) // name -> expiry time (ms)
+  const [keyedPeers, setKeyedPeers] = useState([]) // members we can DM
 
   const conn = useRef(null) // { ws, channel, seq }
   const meRef = useRef('')
@@ -54,6 +56,10 @@ export function useChat() {
   // share a millisecond), hence the full key.
   const seenChats = useRef(new Set())
   const typingSent = useRef({ active: false, at: 0 })
+  // End-to-end encrypted DMs: our key pair and the members' public keys.
+  const sodiumRef = useRef(null)
+  const userKey = useRef(null)
+  const peers = useRef(new Map())
 
   const addMessage = useCallback((m) => {
     setMessages((prev) => [...prev.slice(-(MAX_MESSAGES - 1)), { id: nextId++, ...m }])
@@ -72,12 +78,61 @@ export function useChat() {
     let attempt = 0
     let timer = null
 
+    const sendRaw = (m) => {
+      const c = conn.current
+      if (c?.channel.established) c.channel.send(encodeMessage(m, c.seq++))
+    }
+
+    const setPeer = (name, key) => {
+      if (key) peers.current.set(name, key)
+      else peers.current.delete(name)
+      setKeyedPeers([...peers.current.keys()])
+    }
+
+    const onPeerKey = (m) => {
+      const sodium = sodiumRef.current
+      const who = `${window.location.host}/${m.name}`
+      const hex = sodium.to_hex(m.key)
+      if (checkPin(window.localStorage, who, hex, PEER_PINS) === Pin.MISMATCH) {
+        addMessage({
+          kind: 'error',
+          text: `The private-message key of ${m.name} has CHANGED. They may have a new ` +
+                'device, or the server is intercepting. Compare the new safety number: ' +
+                safetyNumber(sodium, userKey.current.publicKey, m.key),
+        })
+        forgetPin(window.localStorage, who, PEER_PINS)
+        checkPin(window.localStorage, who, hex, PEER_PINS)
+      }
+      setPeer(m.name, m.key)
+    }
+
+    const onDm = (m) => {
+      // Our own echo is "to" someone else; their key opens it too.
+      const other = m.name === meRef.current ? m.to : m.name
+      const key = peers.current.get(other)
+      try {
+        if (!key) throw new Error('no key')
+        const { text } = open(sodiumRef.current, userKey.current.privateKey, key, m.nonce, m.box)
+        addMessage({ kind: 'dm', name: m.name, to: m.to, text, ts: m.timestamp,
+                     own: m.name === meRef.current })
+      } catch {
+        addMessage({ kind: 'error', text: `Could not decrypt a private message from ${m.name}.` })
+      }
+    }
+
     const handle = (m) => {
       switch (m.type) {
         case FT.WELCOME:
           setStatus(Status.CHATTING)
           setError(null)
           addMessage({ kind: 'system', text: m.text })
+          sendRaw({ type: FT.KEY, key: userKey.current.publicKey })
+          break
+        case FT.PEER_KEY:
+          onPeerKey(m)
+          break
+        case FT.DM_RECV:
+          onDm(m)
           break
         case FT.CHAT: {
           const history = (m.flags & FLAG.HISTORY) !== 0
@@ -95,6 +150,7 @@ export function useChat() {
           break
         case FT.LEAVE:
           setUsers((u) => u.filter((n) => n !== m.name))
+          setPeer(m.name, null)
           setTyping((t) => without(t, m.name))
           addMessage({ kind: 'system', text: `${m.name} left the chat` })
           break
@@ -132,6 +188,8 @@ export function useChat() {
       const sodium = (await import('libsodium-wrappers')).default
       await sodium.ready
       if (cancelled) return
+      sodiumRef.current = sodium
+      if (!userKey.current) userKey.current = loadOrCreateUserKey(sodium, window.localStorage)
 
       const ws = new WebSocket(wsUrl())
       ws.binaryType = 'arraybuffer'
@@ -182,6 +240,8 @@ export function useChat() {
       ws.onclose = () => {
         if (conn.current?.ws === ws) conn.current = null
         setUsers([])
+        peers.current.clear()
+        setKeyedPeers([])
         if (cancelled || untrusted) return
         setStatus(Status.DISCONNECTED)
 
@@ -247,6 +307,26 @@ export function useChat() {
     return ok
   }, [send])
 
+  /** Sends an end-to-end encrypted private message. */
+  const sendDm = useCallback((to, text) => {
+    const key = peers.current.get(to)
+    if (!key || !userKey.current) return false
+    try {
+      const { nonce, box } = seal(sodiumRef.current, userKey.current.privateKey, key, Date.now(), text)
+      return send({ type: FT.DM, to, nonce, box })
+    } catch (e) {
+      setError(e.message)
+      return false
+    }
+  }, [send])
+
+  /** Safety number to compare with `name` out of band. */
+  const safetyWith = useCallback((name) => {
+    const key = peers.current.get(name)
+    if (!key || !userKey.current) return null
+    return safetyNumber(sodiumRef.current, userKey.current.publicKey, key)
+  }, [])
+
   const clearError = useCallback(() => setError(null), [])
 
   // After the user confirmed out of band that the key change is legitimate.
@@ -259,7 +339,7 @@ export function useChat() {
 
   return {
     status, messages, users, me, error, serverFingerprint, pinnedFingerprint: pinned,
-    reconnectIn, typing: Object.keys(typing), login, sendText, notifyTyping, clearError,
-    trustNewServerKey,
+    reconnectIn, typing: Object.keys(typing), keyedPeers, login, sendText, sendDm, safetyWith,
+    notifyTyping, clearError, trustNewServerKey,
   }
 }

@@ -78,21 +78,48 @@ function LoginScreen({ status, error, fingerprint, onLogin }) {
   )
 }
 
-function UserList({ users, me }) {
+function UserList({ users, me, keyedPeers, dmTarget, onPick }) {
   return (
     <aside className="user-list">
       <h3>Online · {users.length}</h3>
       <ul>
-        {[...users].sort((a, b) => a.localeCompare(b)).map((u) => (
-          <li key={u} className={u === me ? 'me' : ''}>
-            <span className="dot" />
-            {u}
-            {u === me && <span className="you"> (you)</span>}
-          </li>
-        ))}
+        {[...users].sort((a, b) => a.localeCompare(b)).map((u) => {
+          const canDm = u !== me && keyedPeers.includes(u)
+          return (
+            <li key={u} className={`${u === me ? 'me' : ''}${u === dmTarget ? ' selected' : ''}`}>
+              <span className="dot" />
+              {canDm ? (
+                <button type="button" className="user-dm" title={`Private message to ${u}`}
+                        onClick={() => onPick(u === dmTarget ? null : u)}>
+                  {u} <span aria-hidden>🔒</span>
+                </button>
+              ) : (
+                <span>{u}</span>
+              )}
+              {u === me && <span className="you"> (you)</span>}
+            </li>
+          )
+        })}
       </ul>
+      {keyedPeers.length > 0 && <p className="hint">Click a name for an encrypted private message.</p>}
     </aside>
   )
+}
+
+function Message({ m }) {
+  if (m.kind === 'chat' || m.kind === 'dm') {
+    const dm = m.kind === 'dm'
+    const classes = ['message', m.own ? 'own' : 'other', dm && 'dm', m.history && 'history']
+    return (
+      <div className={classes.filter(Boolean).join(' ')}>
+        {dm && <div className="message-dm">🔒 private {m.own ? `to ${m.to}` : `from ${m.name}`}</div>}
+        {!dm && !m.own && <div className="message-sender">{m.name}</div>}
+        <div className="message-content">{m.text}</div>
+        <div className="message-time">{formatTime(m.ts)}</div>
+      </div>
+    )
+  }
+  return <div className={`message server${m.kind === 'error' ? ' error-line' : ''}`}>{m.text}</div>
 }
 
 function typingText(names) {
@@ -102,10 +129,13 @@ function typingText(names) {
   return `${names.length} people are typing…`
 }
 
-function ChatScreen({ status, me, messages, users, typing, error, reconnectIn,
-                      onSend, onTyping, onDismissError }) {
+function ChatScreen({ status, me, messages, users, typing, keyedPeers, error, reconnectIn,
+                      onSend, onSendDm, safetyWith, onTyping, onDismissError }) {
   const [input, setInput] = useState('')
+  const [dmTarget, setDmTarget] = useState(null)
   const endRef = useRef(null)
+  // The person may have left (or lost their key) since we picked them.
+  const target = dmTarget && keyedPeers.includes(dmTarget) ? dmTarget : null
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -114,7 +144,8 @@ function ChatScreen({ status, me, messages, users, typing, error, reconnectIn,
   const submit = (e) => {
     e.preventDefault()
     const text = input.trim()
-    if (text && onSend(text)) setInput('')
+    if (!text) return
+    if (target ? onSendDm(target, text) : onSend(text)) setInput('')
   }
 
   const online = status === Status.CHATTING
@@ -139,20 +170,20 @@ function ChatScreen({ status, me, messages, users, typing, error, reconnectIn,
         )}
 
         <div className="messages-box">
-          {messages.map((m) =>
-            m.kind === 'chat' ? (
-              <div key={m.id} className={`message ${m.own ? 'own' : 'other'}${m.history ? ' history' : ''}`}>
-                {!m.own && <div className="message-sender">{m.name}</div>}
-                <div className="message-content">{m.text}</div>
-                <div className="message-time">{formatTime(m.ts)}</div>
-              </div>
-            ) : (
-              <div key={m.id} className="message server">{m.text}</div>
-            ),
-          )}
+          {messages.map((m) => <Message key={m.id} m={m} />)}
           <div ref={endRef} />
         </div>
         <div className="typing" aria-live="polite">{typingText(typing)}</div>
+
+        {target && (
+          <div className="dm-banner">
+            <span>
+              🔒 Private message to <strong>{target}</strong>, end-to-end encrypted.
+              Safety number <code>{safetyWith(target)}</code>
+            </span>
+            <button type="button" onClick={() => setDmTarget(null)} aria-label="Back to the room">×</button>
+          </div>
+        )}
 
         <form onSubmit={submit} className="input-form">
           <input
@@ -161,15 +192,15 @@ function ChatScreen({ status, me, messages, users, typing, error, reconnectIn,
             maxLength={TEXT_MAX_LEN}
             onChange={(e) => {
               setInput(e.target.value)
-              onTyping(e.target.value)
+              if (!target) onTyping(e.target.value) // never announce typing a DM
             }}
-            placeholder="Type a message…"
+            placeholder={target ? `Private message to ${target}…` : 'Type a message…'}
             disabled={!online}
           />
           <button type="submit" disabled={!online || !input.trim()}>Send</button>
         </form>
       </div>
-      <UserList users={users} me={me} />
+      <UserList users={users} me={me} keyedPeers={keyedPeers} dmTarget={target} onPick={setDmTarget} />
     </div>
   )
 }
@@ -189,8 +220,9 @@ export default function App() {
 
   return inRoom ? (
     <ChatScreen status={chat.status} me={chat.me} messages={chat.messages} users={chat.users}
-                typing={chat.typing} error={chat.error} reconnectIn={chat.reconnectIn}
-                onSend={chat.sendText} onTyping={chat.notifyTyping}
+                typing={chat.typing} keyedPeers={chat.keyedPeers} error={chat.error}
+                reconnectIn={chat.reconnectIn} onSend={chat.sendText} onSendDm={chat.sendDm}
+                safetyWith={chat.safetyWith} onTyping={chat.notifyTyping}
                 onDismissError={chat.clearError} />
   ) : (
     <LoginScreen status={chat.status} error={chat.error} fingerprint={chat.serverFingerprint}
