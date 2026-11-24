@@ -14,6 +14,7 @@ BIN_DIR = bin
 # ----- Binaries -----
 SERVER_BIN = $(BIN_DIR)/server
 CLIENT_BIN = $(BIN_DIR)/client
+BENCH_BIN  = $(BIN_DIR)/bench
 
 # ----- Objects -----
 COMMON_OBJ = $(OBJ_DIR)/utility.o $(OBJ_DIR)/network.o
@@ -23,7 +24,7 @@ WEB_OBJ    = $(OBJ_DIR)/sha1.o $(OBJ_DIR)/http.o $(OBJ_DIR)/ws.o
 CRYPTO_OBJ = $(OBJ_DIR)/identity.o $(OBJ_DIR)/handshake.o $(OBJ_DIR)/secure.o $(OBJ_DIR)/known_servers.o
 SERVER_OBJ = $(OBJ_DIR)/server.o $(COMMON_OBJ) $(PROTO_OBJ) $(CORE_OBJ) $(CRYPTO_OBJ) $(WEB_OBJ)
 CLIENT_OBJ = $(OBJ_DIR)/client.o $(COMMON_OBJ) $(PROTO_OBJ) $(CRYPTO_OBJ)
-DEPS       = $(wildcard $(OBJ_DIR)/*.d $(TEST_BIN_DIR)/*.d)
+DEPS       = $(wildcard $(OBJ_DIR)/*.d $(BIN_DIR)/*.d $(TEST_BIN_DIR)/*.d)
 
 # ----- Tests -----
 # Modules without a main(), linked into every test binary.
@@ -39,11 +40,13 @@ WS_PORT   = 8081
 WEB_ROOT  = ../Web/dist
 SERVER_IP = 127.0.0.1
 
-.PHONY: all build test memcheck run-server run-client clean
+.PHONY: all build bench test memcheck run-server run-client clean
 
 all: build
 
-build: $(SERVER_BIN) $(CLIENT_BIN)
+build: $(SERVER_BIN) $(CLIENT_BIN) $(BENCH_BIN)
+
+bench: $(BENCH_BIN)
 
 $(OBJ_DIR) $(BIN_DIR) $(TEST_BIN_DIR):
 	mkdir -p $@
@@ -56,6 +59,10 @@ $(SERVER_BIN): $(SERVER_OBJ) | $(BIN_DIR)
 
 $(CLIENT_BIN): $(CLIENT_OBJ) | $(BIN_DIR)
 	$(CC) -o $@ $^ $(LDLIBS)
+
+# Load generator: see tools/bench.c for usage.
+$(BENCH_BIN): tools/bench.c $(PROTO_OBJ) $(CRYPTO_OBJ) | $(BIN_DIR)
+	$(CC) $(CFLAGS) -o $@ $< $(PROTO_OBJ) $(CRYPTO_OBJ) $(LDLIBS)
 
 $(TEST_BIN_DIR)/%: $(TEST_DIR)/%.c $(MODULE_OBJ) | $(TEST_BIN_DIR)
 	$(CC) $(CFLAGS) -I./$(TEST_DIR) -o $@ $< $(MODULE_OBJ) $(LDLIBS)
@@ -76,6 +83,6 @@ run-client: $(CLIENT_BIN)
 	$(CLIENT_BIN) $(SERVER_IP) $(PORT)
 
 clean:
-	rm -rf $(OBJ_DIR)/*.o $(OBJ_DIR)/*.d $(SERVER_BIN) $(CLIENT_BIN) $(TEST_BIN_DIR)
+	rm -rf $(OBJ_DIR)/*.o $(OBJ_DIR)/*.d $(BIN_DIR) $(TEST_BIN_DIR)
 
 -include $(DEPS)
