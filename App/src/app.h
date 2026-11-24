@@ -5,6 +5,7 @@
 
 #include "chat_client.h"
 #include "settings.h"
+#include "theme.h"
 
 // Optional start-up actions from the command line (also used for automated
 // screenshots).
@@ -22,6 +23,7 @@ public:
     explicit App(const AutoRun& autorun);
     void poll();
     void draw();
+    ImVec4 clearColor() const { return palette_.bg; }
 
 private:
     void drawConnectScreen();
@@ -40,11 +42,13 @@ private:
     void startConnect();
 
     void saveSettings();
+    void applyLook();   // after any change to the look settings
 
     ChatClient client_;
     AutoRun autorun_;
     Settings settings_;
     std::string settings_path_;
+    Palette palette_{};
     bool said_ = false;
 
     // Set once we got into the room; while set, a dropped connection is

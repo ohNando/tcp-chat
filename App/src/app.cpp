@@ -37,6 +37,7 @@ static ImVec4 state_color(ConnState s) {
 
 App::App(const AutoRun& autorun) : autorun_(autorun), settings_path_(settings_path()) {
     settings_load(settings_, settings_path_);
+    applyLook();
     std::snprintf(host_, sizeof(host_), "%s", settings_.host.c_str());
     port_ = settings_.port;
     std::snprintf(name_, sizeof(name_), "%s", settings_.name.c_str());
@@ -47,6 +48,11 @@ App::App(const AutoRun& autorun) : autorun_(autorun), settings_path_(settings_pa
         std::snprintf(name_, sizeof(name_), "%s", autorun_.name.c_str());
         startConnect();
     }
+}
+
+void App::applyLook() {
+    palette_ = resolve_theme(settings_);
+    apply_style(palette_, settings_);
 }
 
 void App::saveSettings() {
@@ -138,7 +144,8 @@ void App::drawConnectScreen() {
     bool busy = client_.state() != ConnState::Disconnected;
     bool valid = name_valid(name_) && port_ > 0 && port_ < 65536 && host_[0];
     ImGui::BeginDisabled(busy || !valid);
-    if (ImGui::Button(busy ? "Connecting..." : "Connect", ImVec2(width, 0)) || (enter && valid && !busy))
+    if (primary_button(palette_, busy ? "Connecting..." : "Connect", ImVec2(width, 0)) ||
+        (enter && valid && !busy))
         startConnect();
     ImGui::EndDisabled();
 
@@ -344,7 +351,7 @@ void App::drawInput() {
         if (!dmTarget()) client_.notifyTyping(has_text); // never announce typing a DM
     }
     ImGui::SameLine();
-    if (ImGui::Button("Send", ImVec2(button_w, 0)) || enter) submitInput();
+    if (primary_button(palette_, "Send", ImVec2(button_w, 0)) || enter) submitInput();
     ImGui::EndDisabled();
 }
 

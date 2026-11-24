@@ -147,7 +147,8 @@ int main(int argc, char** argv) {
         int w, h;
         glfwGetFramebufferSize(window, &w, &h);
         glViewport(0, 0, w, h);
-        glClearColor(0.08f, 0.09f, 0.11f, 1.0f);
+        ImVec4 bg = app.clearColor();
+        glClearColor(bg.x, bg.y, bg.z, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT);
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
