@@ -21,6 +21,7 @@ export const FT = Object.freeze({
   QUIT: 0x04,
   PING: 0x05,
   PONG: 0x06,
+  TYPING: 0x07,
   // server -> client
   WELCOME: 0x81,
   CHAT: 0x82,
@@ -28,6 +29,7 @@ export const FT = Object.freeze({
   LEAVE: 0x84,
   USERS: 0x85,
   ERR: 0x86,
+  USER_TYPING: 0x87,
 })
 
 // Frame flags (header byte 2). Unknown flags are ignored.
@@ -144,6 +146,13 @@ function writePayload(w, m) {
       w.u16(m.code)
       w.str(m.text, TEXT_MAX_LEN)
       break
+    case FT.TYPING:
+      w.u8(m.active ? 1 : 0)
+      break
+    case FT.USER_TYPING:
+      w.str(m.name, NAME_MAX_LEN)
+      w.u8(m.active ? 1 : 0)
+      break
     case FT.USERS_REQ:
     case FT.QUIT:
     case FT.PING:
@@ -181,6 +190,13 @@ function readPayload(r, type) {
     case FT.ERR:
       m.code = r.u16()
       m.text = r.str(TEXT_MAX_LEN)
+      break
+    case FT.TYPING:
+      m.active = r.u8() !== 0
+      break
+    case FT.USER_TYPING:
+      m.name = r.str(NAME_MAX_LEN)
+      m.active = r.u8() !== 0
       break
     default:
       break

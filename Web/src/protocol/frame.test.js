@@ -60,3 +60,9 @@ test('flags round-trip and default to zero', () => {
   assert.equal(h.flags, FLAG.HISTORY)
   assert.equal(roundTrip({ type: FT.CHAT, timestamp: 1, name: 'ali', text: 'yeni' }).flags, 0)
 })
+
+test('typing messages round-trip', () => {
+  assert.equal(roundTrip({ type: FT.TYPING, active: true }).active, true)
+  const t = roundTrip({ type: FT.USER_TYPING, name: 'ayşe', active: false })
+  assert.deepEqual([t.name, t.active], ['ayşe', false])
+})

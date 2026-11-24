@@ -137,6 +137,7 @@ truncated payloads and trailing bytes are all rejected.
 | `QUIT` | `0x04` | empty |
 | `PING` | `0x05` | empty |
 | `PONG` | `0x06` | empty |
+| `TYPING` | `0x07` | `u8 active` (1 = typing, 0 = stopped) |
 
 `PING` and `PONG` work in both directions: the receiver of a `PING`
 answers with a `PONG`.
@@ -159,6 +160,12 @@ forever. Clients must answer with `PONG`; any other traffic also counts.
 | `LEAVE` | `0x84` | `str name` |
 | `USERS` | `0x85` | `u16 count` · `count × str name` |
 | `ERR` | `0x86` | `u16 code` · `str text` |
+| `USER_TYPING` | `0x87` | `str name` · `u8 active` |
+
+The server forwards a member's `TYPING` to everybody else as
+`USER_TYPING`. Clients send `active = 1` at most every 2 seconds while the
+user types and `active = 0` when the input is cleared or sent; a receiver
+hides the indicator if it is not refreshed within 5 seconds.
 
 ### Error codes
 

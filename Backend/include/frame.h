@@ -29,6 +29,7 @@ typedef enum {
     FT_QUIT      = 0x04,
     FT_PING      = 0x05,
     FT_PONG      = 0x06,
+    FT_TYPING    = 0x07,
 
     /* server -> client */
     FT_WELCOME   = 0x81,
@@ -37,6 +38,7 @@ typedef enum {
     FT_LEAVE     = 0x84,
     FT_USERS     = 0x85,
     FT_ERR       = 0x86,
+    FT_USER_TYPING = 0x87,
 } frame_type_t;
 
 /* Frame flags (header byte 2). Unknown flags are ignored by receivers. */

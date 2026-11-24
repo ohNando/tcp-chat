@@ -153,11 +153,27 @@ TEST(flags_round_trip) {
     CHECK_EQ_INT(out.flags, 0);
 }
 
+TEST(typing_round_trips) {
+    message_init(&in, FT_TYPING);
+    in.active = 1;
+    CHECK_EQ_INT(round_trip(), 0);
+    CHECK_EQ_INT(out.type, FT_TYPING);
+    CHECK_EQ_INT(out.active, 1);
+
+    message_init(&in, FT_USER_TYPING);
+    strcpy(in.name, "ayşe");
+    in.active = 0;
+    CHECK_EQ_INT(round_trip(), 0);
+    CHECK_EQ_STR(out.name, "ayşe");
+    CHECK_EQ_INT(out.active, 0);
+}
+
 int main(void) {
     RUN(name_round_trips);
     RUN(msg_and_welcome_round_trip);
     RUN(chat_round_trips);
     RUN(flags_round_trip);
+    RUN(typing_round_trips);
     RUN(join_and_leave_round_trip);
     RUN(users_round_trip);
     RUN(err_round_trips);

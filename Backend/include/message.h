@@ -15,6 +15,8 @@
  *   LEAVE     str name
  *   USERS     u16 count | count x str name
  *   ERR       u16 code | str text
+ *   TYPING       u8 active                  (client -> server)
+ *   USER_TYPING  str name | u8 active       (server -> client)
  *
  * Decoding is strict: truncated payloads and trailing bytes are rejected.
  */
@@ -43,6 +45,7 @@ typedef struct {
     uint8_t flags;                           /* FLAG_* from frame.h */
     uint64_t timestamp;                      /* CHAT */
     uint16_t code;                           /* ERR */
+    uint8_t active;                          /* TYPING, USER_TYPING */
     char name[NAME_MAX_LEN + 1];             /* NAME, CHAT, JOIN, LEAVE */
     char text[TEXT_MAX_LEN + 1];             /* MSG, WELCOME, CHAT, ERR */
     uint16_t user_count;                     /* USERS */

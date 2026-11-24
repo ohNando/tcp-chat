@@ -37,6 +37,13 @@ static void encode_payload(const message_t* m, bytebuf_t* b) {
             bb_put_u16(b, m->code);
             bb_put_str(b, m->text);
             break;
+        case FT_TYPING:
+            bb_put_u8(b, m->active ? 1 : 0);
+            break;
+        case FT_USER_TYPING:
+            bb_put_str(b, m->name);
+            bb_put_u8(b, m->active ? 1 : 0);
+            break;
         case FT_USERS_REQ:
         case FT_QUIT:
         case FT_PING:
@@ -96,6 +103,13 @@ static void decode_payload(message_t* m, bytebuf_t* b) {
         case FT_ERR:
             bb_get_u16(b, &m->code);
             bb_get_str(b, m->text, sizeof(m->text));
+            break;
+        case FT_TYPING:
+            bb_get_u8(b, &m->active);
+            break;
+        case FT_USER_TYPING:
+            bb_get_str(b, m->name, sizeof(m->name));
+            bb_get_u8(b, &m->active);
             break;
         default:
             break; /* empty payloads */
