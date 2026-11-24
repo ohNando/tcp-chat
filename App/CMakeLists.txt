@@ -55,6 +55,7 @@ add_library(chat_core STATIC
   ${BACKEND_DIR}/src/secure.c
   ${BACKEND_DIR}/src/config.c
   ${BACKEND_DIR}/src/known_servers.c
+  ${BACKEND_DIR}/src/dm.c
 )
 target_include_directories(chat_core PUBLIC ${BACKEND_DIR}/include)
 target_compile_options(chat_core PRIVATE -Wall -Wextra)
