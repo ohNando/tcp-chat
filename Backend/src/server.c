@@ -244,6 +244,19 @@ static int resolve_static(const char* target, char out[PATH_MAX]) {
     return 0;
 }
 
+/* Opens path + suffix if it is a regular file (no symlinks), else -1. */
+static int open_variant(const char* path, const char* suffix, struct stat* st) {
+    char p[PATH_MAX];
+    if (snprintf(p, sizeof(p), "%s%s", path, suffix) >= (int)sizeof(p)) return -1;
+    int fd = open(p, O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
+    if (fd < 0) return -1;
+    if (fstat(fd, st) < 0 || !S_ISREG(st->st_mode)) {
+        close(fd);
+        return -1;
+    }
+    return fd;
+}
+
 static void serve_static(conn_t* c, const http_request_t* req) {
     int head = strcmp(req->method, "HEAD") == 0;
     if (!head && strcmp(req->method, "GET") != 0) {
@@ -257,24 +270,50 @@ static void serve_static(conn_t* c, const http_request_t* req) {
         return;
     }
 
-    int fd = open(path, O_RDONLY | O_CLOEXEC);
     struct stat st;
-    if (fd < 0 || fstat(fd, &st) < 0 || !S_ISREG(st.st_mode)) {
-        if (fd >= 0) close(fd);
+    int fd = open_variant(path, "", &st);
+    if (fd < 0) {
         http_error(c, 404, "Not Found");
         return;
     }
 
-    char hdr[512];
+    /* Prefer a precompressed copy (made by Web/scripts/compress.mjs) when
+     * the browser accepts it: nothing is compressed at request time. */
+    const char* encoding = NULL;
+    struct stat zst;
+    int zfd;
+    if (http_header_has_token(req, "Accept-Encoding", "br") &&
+        (zfd = open_variant(path, ".br", &zst)) >= 0) {
+        encoding = "br";
+    } else if (http_header_has_token(req, "Accept-Encoding", "gzip") &&
+               (zfd = open_variant(path, ".gz", &zst)) >= 0) {
+        encoding = "gzip";
+    }
+    if (encoding) {
+        close(fd);
+        fd = zfd;
+        st = zst;
+    }
+
+    /* Vite puts a content hash in every file name under /assets/, so those
+     * can be cached forever; index.html must always be revalidated. */
+    int immutable = strncmp(req->target, "/assets/", 8) == 0;
+
+    char hdr[640];
     int hn = snprintf(hdr, sizeof(hdr),
                       "HTTP/1.1 200 OK\r\n"
                       "Content-Type: %s\r\n"
                       "Content-Length: %lld\r\n"
-                      "Cache-Control: no-cache\r\n"
+                      "%s%s%s"
+                      "Vary: Accept-Encoding\r\n"
+                      "Cache-Control: %s\r\n"
                       "X-Content-Type-Options: nosniff\r\n"
                       "Connection: close\r\n"
                       "\r\n",
-                      mime_type(path), (long long)st.st_size);
+                      mime_type(path), (long long)st.st_size,
+                      encoding ? "Content-Encoding: " : "", encoding ? encoding : "",
+                      encoding ? "\r\n" : "",
+                      immutable ? "public, max-age=31536000, immutable" : "no-cache");
     conn_queue(c, hdr, (size_t)hn);
 
     if (head)
@@ -282,8 +321,8 @@ static void serve_static(conn_t* c, const http_request_t* req) {
     else
         conn_attach_file(c, fd, st.st_size);
     c->close_after_flush = 1;
-    log_info("conn %d (%s): %s %s 200 (%lld bytes)", c->id, c->peer, req->method,
-             req->target, (long long)st.st_size);
+    log_info("conn %d (%s): %s %s 200 (%lld bytes%s%s)", c->id, c->peer, req->method,
+             req->target, (long long)st.st_size, encoding ? ", " : "", encoding ? encoding : "");
 }
 
 /* Handles the first (and only) HTTP request on a connection. */
