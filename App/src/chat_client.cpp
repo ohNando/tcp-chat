@@ -303,6 +303,13 @@ void ChatClient::handleMessage(const message_t& m) {
         case FT_USERS:
             users_.assign(m.users, m.users + m.user_count);
             break;
+        case FT_PING: {
+            // Heartbeat: the server drops connections that stay silent.
+            static message_t pong;
+            message_init(&pong, FT_PONG);
+            sendMessage(pong);
+            break;
+        }
         case FT_ERR:
             last_error_ = m.text;
             addLine(ChatLine::Error, m.text);

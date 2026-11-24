@@ -196,6 +196,13 @@ static void handle_server_message(message_t* m) {
             show("%s* online (%u): %s%s", C_INFO, m->user_count, list, C_RESET);
             break;
         }
+        case FT_PING: {
+            /* Heartbeat: the server drops connections that stay silent. */
+            static message_t pong;
+            message_init(&pong, FT_PONG);
+            send_message(&pong);
+            break;
+        }
         case FT_ERR:
             if (state == CLIENT_REGISTERING) state = CLIENT_NAMING;
             show("%s! %s%s", C_ERROR, m->text, C_RESET);

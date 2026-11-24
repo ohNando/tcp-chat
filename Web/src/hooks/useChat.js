@@ -78,6 +78,12 @@ export function useChat() {
         case FT.USERS:
           setUsers(m.users)
           break
+        case FT.PING: {
+          // Heartbeat: the server drops connections that stay silent.
+          const c = conn.current
+          if (c?.channel.established) c.channel.send(encodeMessage({ type: FT.PONG }, c.seq++))
+          break
+        }
         case FT.ERR:
           setError(m.text)
           // A rejected NAME sends us back to the login screen.
