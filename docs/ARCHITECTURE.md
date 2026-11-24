@@ -66,6 +66,13 @@ draw them faded and skip the ones they already show after a reconnect.
 `TYPING` notifications are not stored at all: the server just forwards
 them to the other members.
 
+### Private messages
+
+The server stores each member's public DM key (`KEY`) and hands it to the
+others (`PEER_KEY`). A `DM` is relayed as an opaque box to the recipient
+and echoed to the sender; the server checks only that the recipient exists
+and has a key, and does not log it.
+
 ### Connection lifecycle
 
 ```
@@ -96,7 +103,9 @@ proper (encrypted) "room full" error.
 | `identity.c` | server Ed25519 key file and fingerprints |
 | `handshake.c` | hello messages and the signed transcript |
 | `secure.c` | handshake state machine + secretstream record layer |
-| `known_servers.c` | client-side trust on first use |
+| `known_servers.c` | client-side trust on first use (servers, and users' DM keys) |
+| `config.c` | where client files live (`~/.config/tcp-chat`) |
+| `dm.c` | user keys, end-to-end encrypted private messages, safety numbers |
 | `http.c` | minimal HTTP request parser |
 | `ws.c` / `sha1.c` | WebSocket upgrade and framing (RFC 6455) |
 | `client.c` | terminal client (single `poll()` loop on stdin + socket) |

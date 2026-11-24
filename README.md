@@ -25,6 +25,9 @@ a terminal client, a React web client and a native Dear ImGui desktop app.
   libsodium. Tampered, replayed or reordered records are rejected.
 - **Server identity pinning.** Clients remember the server's key on first
   use and refuse to connect if it changes.
+- **End-to-end encrypted private messages.** DMs are sealed with each
+  user's own key (`crypto_box`); the server only relays ciphertext, and a
+  safety number lets two people check that nobody swapped their keys.
 - **WebSocket from scratch.** RFC 6455 upgrade, framing, fragmentation,
   ping/pong and close, plus static file serving with `sendfile()`.
 - **Three clients, one room.** Terminal, browser and desktop users see each
@@ -93,9 +96,10 @@ What the encryption protects, and what it does not:
   authenticated; someone on the network can neither read nor modify it.
 - Clients verify the server's identity key (pinned on first use), so a man
   in the middle is detected after the first connection.
-- **It is not end-to-end encryption.** The server decrypts every message
-  and re-encrypts it for each recipient, so whoever runs the server can
-  read the chat.
+- **Room messages are not end-to-end encrypted.** The server decrypts every
+  room message and re-encrypts it for each recipient, so whoever runs the
+  server can read the room. **Private messages are end-to-end encrypted**:
+  the server only relays them and cannot read them.
 - The web client is served over plain HTTP. That is fine on `localhost`;
   over a network, put it behind HTTPS.
 - There are no user accounts or passwords: names are first come, first

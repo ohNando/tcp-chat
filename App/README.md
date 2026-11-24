@@ -46,6 +46,9 @@ port (8080) and a name.
 - Online users panel, `/users` and `/quit` commands.
 - Recent history replayed on join (shown faded) and "is typing…"
   indicators.
+- End-to-end encrypted private messages: click a name marked `[dm]` in the
+  user list. The safety number is shown above the input box; compare it
+  with the other person.
 - Reconnects automatically with backoff (1 s, 2 s, 4 s … 15 s) if the
   connection drops.
 - No threads: the socket is polled once per frame, and when idle the app

@@ -60,7 +60,8 @@ browsers cache the hashed files under `/assets/` for a year.
 |---|---|
 | `src/protocol/frame.js` | binary frame and message codec, mirror of `Backend/src/message.c` |
 | `src/protocol/secure.js` | handshake and encrypted record layer, mirror of `Backend/src/secure.c` |
-| `src/protocol/pins.js` | remembers the server fingerprint in `localStorage` |
+| `src/protocol/pins.js` | remembers the server fingerprint and users' DM keys in `localStorage` |
+| `src/protocol/dm.js` | end-to-end encrypted private messages and safety numbers |
 | `src/hooks/useChat.js` | WebSocket connection, reconnect with backoff, chat state |
 | `src/App.jsx` | login, chat, online users and the "identity changed" warning |
 

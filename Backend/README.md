@@ -92,11 +92,18 @@ Type a name, then chat. Commands:
 | Command | |
 |---|---|
 | `/users` | list online users |
+| `/msg <name> <text>` | end-to-end encrypted private message |
+| `/safety <name>` | safety number to compare with that person |
 | `/quit` | leave the chat |
 | `/help` | show the commands |
 
-Known server keys are stored in `~/.config/tcp-chat/known_servers`
-(override with `TCPCHAT_KNOWN_SERVERS`).
+Files in `~/.config/tcp-chat/` (each can be overridden for tests):
+
+| File | Variable | |
+|---|---|---|
+| `known_servers` | `TCPCHAT_KNOWN_SERVERS` | pinned server keys |
+| `user.key` | `TCPCHAT_USER_KEY` | your private-message key, created on first start |
+| `known_peers` | `TCPCHAT_KNOWN_PEERS` | other users' DM keys, per server and name |
 
 ## Layout
 

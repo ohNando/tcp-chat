@@ -30,11 +30,25 @@ Only the latest commit on `main` is supported.
 | Slow or idle clients exhausting the server | Per-connection output cap (1 MiB), a 10 s handshake timeout and a member limit. |
 | Terminal escape injection | Names and messages with control characters are rejected by the server and sanitized again by the terminal client. |
 | HTML / script injection in the web client | React renders all user text as text, never as HTML. |
+| The server operator reading private messages | Private messages are end-to-end encrypted with `crypto_box` between the two users' keys; the server only relays ciphertext and never logs DMs. |
+| The server substituting a user's DM key | Clients show a safety number per conversation that both people can compare, and warn when a known user's key changes. |
 
 ### Out of scope / known limitations
 
-- **No end-to-end encryption.** The server sees every message in plaintext.
-  Only run or use a server you trust.
+- **Room messages are not end-to-end encrypted.** The server sees every
+  room message in plaintext; only private messages are end-to-end encrypted.
+- **Private messages have no forward secrecy.** They use long-term keys:
+  whoever steals a user's key file can decrypt that user's past DMs if they
+  also recorded the traffic.
+- **The server distributes DM keys.** Until two people compare their safety
+  number, a malicious server could give them its own keys and read their
+  DMs. Key changes for a known name are flagged.
+- **DM metadata is visible to the server:** who writes to whom and when.
+- **A recorded DM can be replayed by the server.** The sender's timestamp
+  inside the box shows when it was really written.
+- **Keys at rest are not password protected.** `user.key` is a plain file
+  (mode 0600); in the browser the key lives in `localStorage`, so browser
+  extensions or other scripts on the same origin could read it.
 - **Trust on first use.** The very first connection to a server is not
   protected against a man in the middle unless you compare the fingerprint
   with the one the server prints at start-up.

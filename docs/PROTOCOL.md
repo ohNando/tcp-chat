@@ -183,7 +183,7 @@ hides the indicator if it is not refreshed within 5 seconds.
 | 6 | `ROOM_FULL` | member limit reached (connection is closed) |
 | 7 | `TEXT_INVALID` | empty, too long, or contains control characters |
 | 8 | `NO_SUCH_USER` | a `DM` names someone who is not in the room |
-| 9 | `NO_KEY` | a `DM` before the sender, or to someone who has not, sent `KEY` |
+| 9 | `NO_KEY` | a `DM` when the sender or the recipient has not sent `KEY` yet |
 
 ## Session flow
 
