@@ -7,6 +7,7 @@ import { alpha } from './theme/themes'
 import { groupMessages } from './chat/groupMessages'
 import Avatar from './components/Avatar'
 import SettingsPanel from './components/SettingsPanel'
+import EmojiPicker from './components/EmojiPicker'
 import { nameColor } from './chat/names'
 import { NAME_MAX_LEN, TEXT_MAX_LEN } from './protocol/frame'
 import './App.css'
@@ -193,7 +194,9 @@ function ChatScreen({ status, me, messages, users, typing, keyedPeers, error, re
                       onSend, onSendDm, safetyWith, onTyping, onDismissError, onOpenSettings, look }) {
   const [input, setInput] = useState('')
   const [dmTarget, setDmTarget] = useState(null)
+  const [emojiOpen, setEmojiOpen] = useState(false)
   const endRef = useRef(null)
+  const inputRef = useRef(null)
   // The person may have left (or lost their key) since we picked them.
   const target = dmTarget && keyedPeers.includes(dmTarget) ? dmTarget : null
 
@@ -209,6 +212,23 @@ function ChatScreen({ status, me, messages, users, typing, keyedPeers, error, re
   }
 
   const online = status === Status.CHATTING
+
+  const changeInput = (value) => {
+    setInput(value)
+    if (!target) onTyping(value) // never announce typing a DM
+  }
+
+  // Puts the emoji where the cursor is, then puts the cursor after it.
+  const insertEmoji = (emoji) => {
+    const el = inputRef.current
+    const start = el?.selectionStart ?? input.length
+    const end = el?.selectionEnd ?? start
+    changeInput(input.slice(0, start) + emoji + input.slice(end))
+    requestAnimationFrame(() => {
+      el?.focus()
+      el?.setSelectionRange(start + emoji.length, start + emoji.length)
+    })
+  }
 
   return (
     <div className="chat-layout">
@@ -250,14 +270,15 @@ function ChatScreen({ status, me, messages, users, typing, keyedPeers, error, re
         )}
 
         <form onSubmit={submit} className="input-form">
+          {emojiOpen && <EmojiPicker onPick={insertEmoji} onClose={() => setEmojiOpen(false)} />}
+          <button type="button" className="icon emoji-button" aria-label="Emoji" title="Emoji"
+                  disabled={!online} onClick={() => setEmojiOpen((o) => !o)}>😊</button>
           <input
+            ref={inputRef}
             type="text"
             value={input}
             maxLength={TEXT_MAX_LEN}
-            onChange={(e) => {
-              setInput(e.target.value)
-              if (!target) onTyping(e.target.value) // never announce typing a DM
-            }}
+            onChange={(e) => changeInput(e.target.value)}
             placeholder={target ? `Private message to ${target}…` : 'Type a message…'}
             disabled={!online}
           />

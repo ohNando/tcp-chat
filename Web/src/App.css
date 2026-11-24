@@ -451,12 +451,17 @@ input[type='text']:focus {
 }
 
 .input-form {
+  position: relative; /* anchors the emoji picker */
   display: flex;
   align-items: center;
   gap: 8px;
   padding: 10px 14px;
   background: var(--panel);
   border-top: 1px solid var(--border);
+}
+
+button.icon.emoji-button:disabled {
+  background: transparent;
 }
 
 .input-form input {
