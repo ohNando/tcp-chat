@@ -58,6 +58,14 @@ those that stay silent for the whole timeout (75 s by default). Without it,
 a client whose network vanished would stay in the room forever, because TCP
 never notices a peer that just stops answering.
 
+### History and typing
+
+The server keeps the last 50 chat messages in a ring buffer and replays
+them, flagged `HISTORY`, to every new member before its `WELCOME`. Clients
+draw them faded and skip the ones they already show after a reconnect.
+`TYPING` notifications are not stored at all: the server just forwards
+them to the other members.
+
 ### Connection lifecycle
 
 ```

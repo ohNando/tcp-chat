@@ -44,6 +44,8 @@ port (8080) and a name.
 - Chat log with timestamps, a stable color per user and smart auto-scroll
   (it does not jump while you are reading older messages).
 - Online users panel, `/users` and `/quit` commands.
+- Recent history replayed on join (shown faded) and "is typing…"
+  indicators.
 - Reconnects automatically with backoff (1 s, 2 s, 4 s … 15 s) if the
   connection drops.
 - No threads: the socket is polled once per frame, and when idle the app

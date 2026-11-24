@@ -28,7 +28,13 @@ a terminal client, a React web client and a native Dear ImGui desktop app.
 - **WebSocket from scratch.** RFC 6455 upgrade, framing, fragmentation,
   ping/pong and close, plus static file serving with `sendfile()`.
 - **Three clients, one room.** Terminal, browser and desktop users see each
-  other, with join/leave notices and a live user list.
+  other, with join/leave notices, a live user list, recent history for
+  newcomers and "is typing…" indicators.
+- **Measured, not guessed.** A load generator reports latency percentiles
+  and the server's CPU split; see [docs/PERFORMANCE.md](docs/PERFORMANCE.md)
+  for how a 34 ms Nagle stall became 0.5 ms.
+- **Resilient.** A heartbeat drops dead peers, and the web and desktop
+  clients reconnect on their own.
 
 ## Architecture
 
