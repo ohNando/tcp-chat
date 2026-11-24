@@ -86,6 +86,9 @@ export async function launchFirefox({ port = 9333 + Math.floor(Math.random() * 5
         }
         throw new Error(`timed out waiting for: ${expression}`)
       },
+      // Exact CSS-pixel viewport, independent of the window size.
+      setViewport: (width, height) =>
+        send('browsingContext.setViewport', { context, viewport: { width, height } }),
       screenshot: async (path) => {
         const r = await send('browsingContext.captureScreenshot', { context })
         writeFileSync(path, Buffer.from(r.data, 'base64'))
