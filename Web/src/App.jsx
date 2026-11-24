@@ -133,7 +133,7 @@ function ChatScreen({ status, me, messages, users, error, reconnectIn, onSend, o
         <div className="messages-box">
           {messages.map((m) =>
             m.kind === 'chat' ? (
-              <div key={m.id} className={`message ${m.own ? 'own' : 'other'}`}>
+              <div key={m.id} className={`message ${m.own ? 'own' : 'other'}${m.history ? ' history' : ''}`}>
                 {!m.own && <div className="message-sender">{m.name}</div>}
                 <div className="message-content">{m.text}</div>
                 <div className="message-time">{formatTime(m.ts)}</div>

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
-import { FT, encodeMessage, decodeMessage } from '../protocol/frame.js'
+import { FT, FLAG, encodeMessage, decodeMessage } from '../protocol/frame.js'
 import { SecureChannel, fingerprint } from '../protocol/secure.js'
 import { Pin, checkPin, forgetPin, pinnedFingerprint } from '../protocol/pins.js'
 
@@ -38,6 +38,10 @@ export function useChat() {
 
   const conn = useRef(null) // { ws, channel, seq }
   const meRef = useRef('')
+  // Chats already on screen, so history replayed after a reconnect does
+  // not show them twice. Timestamps alone are not unique (two messages can
+  // share a millisecond), hence the full key.
+  const seenChats = useRef(new Set())
 
   const addMessage = useCallback((m) => {
     setMessages((prev) => [...prev.slice(-(MAX_MESSAGES - 1)), { id: nextId++, ...m }])
@@ -63,10 +67,15 @@ export function useChat() {
           setError(null)
           addMessage({ kind: 'system', text: m.text })
           break
-        case FT.CHAT:
+        case FT.CHAT: {
+          const history = (m.flags & FLAG.HISTORY) !== 0
+          const key = `${m.timestamp}|${m.name}|${m.text}`
+          if (history && seenChats.current.has(key)) break
+          seenChats.current.add(key)
           addMessage({ kind: 'chat', name: m.name, text: m.text, ts: m.timestamp,
-                       own: m.name === meRef.current })
+                       own: m.name === meRef.current, history })
           break
+        }
         case FT.JOIN:
           setUsers((u) => (u.includes(m.name) ? u : [...u, m.name]))
           addMessage({ kind: 'system', text: `${m.name} joined the chat` })

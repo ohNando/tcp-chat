@@ -223,6 +223,8 @@ void App::drawMessages(float height) {
     for (const ChatLine& l : client_.lines()) {
         switch (l.kind) {
             case ChatLine::Chat:
+                // History replayed on join is drawn faded.
+                if (l.history) ImGui::PushStyleVar(ImGuiStyleVar_Alpha, 0.55f);
                 ImGui::TextDisabled("%s", clock_text(l.timestamp).c_str());
                 ImGui::SameLine();
                 ImGui::TextColored(l.own ? ImVec4(0.45f, 0.75f, 1.0f, 1.0f) : name_color(l.name),
@@ -230,6 +232,7 @@ void App::drawMessages(float height) {
                 ImGui::SameLine(0, 0);
                 // "%s" keeps user text out of the format string.
                 ImGui::TextWrapped(": %s", l.text.c_str());
+                if (l.history) ImGui::PopStyleVar();
                 break;
             case ChatLine::System:
                 ImGui::TextDisabled("%s", l.text.c_str());

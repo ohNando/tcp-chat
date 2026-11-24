@@ -26,6 +26,7 @@ struct ChatLine {
     std::string text;
     uint64_t timestamp; // ms since epoch, Chat only
     bool own;
+    bool history;       // replayed by the server when we joined
 };
 
 class ChatClient {
@@ -77,8 +78,9 @@ private:
     void handleMessage(const message_t& m);
     bool sendMessage(const message_t& m, bool final = false);
     void fail(const std::string& why);
+    bool alreadyShown(const message_t& chat) const;
     void addLine(ChatLine::Kind kind, std::string text, std::string name = {},
-                 uint64_t ts = 0, bool own = false);
+                 uint64_t ts = 0, bool own = false, bool history = false);
     void closeSocket();
 
     int fd_ = -1;

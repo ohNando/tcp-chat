@@ -288,9 +288,13 @@ void ChatClient::handleMessage(const message_t& m) {
             last_error_.clear();
             addLine(ChatLine::System, m.text);
             break;
-        case FT_CHAT:
-            addLine(ChatLine::Chat, m.text, m.name, m.timestamp, name_ == m.name);
+        case FT_CHAT: {
+            bool history = (m.flags & FLAG_HISTORY) != 0;
+            // History replayed after a reconnect must not repeat lines.
+            if (history && alreadyShown(m)) break;
+            addLine(ChatLine::Chat, m.text, m.name, m.timestamp, name_ == m.name, history);
             break;
+        }
         case FT_JOIN:
             if (std::find(users_.begin(), users_.end(), m.name) == users_.end())
                 users_.emplace_back(m.name);
@@ -348,9 +352,19 @@ bool ChatClient::requestUsers() {
     return sendMessage(*scratch_);
 }
 
+bool ChatClient::alreadyShown(const message_t& chat) const {
+    // Timestamps are not unique on their own (two messages can share a
+    // millisecond), so compare the whole message.
+    for (const ChatLine& l : lines_)
+        if (l.kind == ChatLine::Chat && l.timestamp == chat.timestamp &&
+            l.name == chat.name && l.text == chat.text)
+            return true;
+    return false;
+}
+
 void ChatClient::addLine(ChatLine::Kind kind, std::string text, std::string name,
-                         uint64_t ts, bool own) {
+                         uint64_t ts, bool own, bool history) {
     if (lines_.size() >= MAX_LINES) lines_.erase(lines_.begin(), lines_.begin() + MAX_LINES / 10);
-    lines_.push_back(ChatLine{ kind, std::move(name), std::move(text), ts, own });
+    lines_.push_back(ChatLine{ kind, std::move(name), std::move(text), ts, own, history });
     lines_version_++;
 }

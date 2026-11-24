@@ -213,6 +213,10 @@ input[type='text']:focus {
   border-bottom-left-radius: 4px;
 }
 
+.message.history {
+  opacity: 0.6;
+}
+
 .message.server {
   align-self: center;
   max-width: 90%;

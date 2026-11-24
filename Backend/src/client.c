@@ -177,8 +177,11 @@ static void handle_server_message(message_t* m) {
             localtime_r(&t, &tm);
             strftime(stamp, sizeof(stamp), "%H:%M", &tm);
             int self = strcmp(m->name, my_name) == 0;
-            show("%s[%s]%s %s%s%s: %s", C_DIM, stamp, C_RESET,
-                 self ? C_SELF : C_OTHER, m->name, C_RESET, m->text);
+            if (m->flags & FLAG_HISTORY) /* replayed: the whole line dimmed */
+                show("%s[%s] %s: %s%s", C_DIM, stamp, m->name, m->text, C_RESET);
+            else
+                show("%s[%s]%s %s%s%s: %s", C_DIM, stamp, C_RESET,
+                     self ? C_SELF : C_OTHER, m->name, C_RESET, m->text);
             break;
         }
         case FT_JOIN:
