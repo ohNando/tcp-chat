@@ -123,14 +123,18 @@ server, in the terminal client, in the desktop app and in the unit tests.
 | `protocol/pins.js` | fingerprint pinning in `localStorage` |
 | `hooks/useChat.js` | WebSocket, reconnect with backoff, chat state |
 | `App.jsx` | login, chat, user list, security warning |
+| `chat/`, `theme/`, `components/` | message grouping, themes and backgrounds, settings panel, emoji picker |
 
 ### Desktop app (`App/src`)
 
 | File | Role |
 |---|---|
 | `chat_client.cpp` | nonblocking connection, polled once per frame |
-| `app.cpp` | ImGui screens: connect, trust prompt, chat, users |
-| `main.cpp` | GLFW window, font loading, screenshot mode |
+| `app.cpp` | ImGui screens: login, chat, users, DM banner, emoji picker |
+| `chat_view.cpp`, `settings_ui.cpp` | message bubbles and the settings panel |
+| `ui.cpp`, `theme.cpp`, `wallpaper.cpp` | the web client's design in CSS pixels: fonts, widgets, palettes, backgrounds |
+| `emoji_font.cpp` | color emoji from Noto Color Emoji's PNG glyphs |
+| `main.cpp` | GLFW window, command line, screenshot mode |
 
 The app compiles the protocol and crypto modules straight from
 `Backend/src`, so it cannot drift from the server's wire format.

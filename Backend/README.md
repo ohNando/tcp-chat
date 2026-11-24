@@ -60,8 +60,9 @@ On start the server prints its **fingerprint**:
 [16:23:44] server fingerprint: DDE0:1D04:25DE:0DB4:1C36:E1AA:DE1F:3B63:...
 ```
 
-Clients show the same fingerprint on their first connection; compare the
-two to be sure you are talking to the right server. Keep
+The terminal client prints the same fingerprint on its first connection,
+and the web and desktop apps show it under Settings → Connection; compare
+them to be sure you are talking to the right server. Keep
 `server_identity.key` private (it is created with mode `0600` and is
 ignored by git). Deleting it gives the server a new identity, and every
 client will then warn that the key changed.

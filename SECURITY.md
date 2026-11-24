@@ -51,7 +51,8 @@ Only the latest commit on `main` is supported.
   extensions or other scripts on the same origin could read it.
 - **Trust on first use.** The very first connection to a server is not
   protected against a man in the middle unless you compare the fingerprint
-  with the one the server prints at start-up.
+  (Settings → Connection in the web and desktop apps, printed by the
+  terminal client) with the one the server prints at start-up.
 - **No authentication of users.** Names are not reserved or protected.
 - **Plain HTTP for the web client.** The JavaScript itself is not protected
   in transit; serve it over HTTPS beyond `localhost`.
