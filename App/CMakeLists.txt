@@ -27,6 +27,15 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(imgui)
 
+# stb_image decodes wallpaper images (header only; stb has no release tags,
+# so a commit is pinned).
+FetchContent_Declare(
+  stb
+  GIT_REPOSITORY https://github.com/nothings/stb.git
+  GIT_TAG        6b5799bae8a1fe3792691ef4b72ae26434c3e799
+)
+FetchContent_MakeAvailable(stb)
+
 add_library(imgui STATIC
   ${imgui_SOURCE_DIR}/imgui.cpp
   ${imgui_SOURCE_DIR}/imgui_draw.cpp
@@ -76,7 +85,9 @@ add_executable(tcp-chat-desktop
   src/theme.cpp
   src/chat_view.cpp
   src/settings_ui.cpp
+  src/stb_image_impl.cpp
 )
+target_include_directories(tcp-chat-desktop PRIVATE ${stb_SOURCE_DIR})
 target_compile_options(tcp-chat-desktop PRIVATE -Wall -Wextra)
 target_link_libraries(tcp-chat-desktop PRIVATE imgui chat_client)
 
