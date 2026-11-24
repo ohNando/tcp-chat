@@ -19,7 +19,6 @@ struct AutoRun {
     int port = 0;
     std::string name;
     std::string say;
-    bool trust = false;
     bool open_settings = false;
     bool open_emoji = false;
     std::string dm;          // open a private chat with this user once possible
@@ -53,7 +52,6 @@ private:
     void drawInputForm(ImVec2 at, float width);
     void drawEmojiPicker(ImVec2 form_top_left);
     void drawUsers(ImVec2 a, ImVec2 b);
-    void drawTrustPrompt();
     void drawIdentityWarning();
 
     std::string statusText() const;

@@ -364,9 +364,33 @@ void text_layout(Ctx& c) {
     end_section(c);
 }
 
+// Connection: the server's fingerprint, for people who want to compare it
+// with the one the server printed (web: SettingsPanel.jsx Connection).
+void connection(Ctx& c, const std::string& fp) {
+    if (fp.empty()) return;
+    section(c, "Connection");
+    Font label{ fonts.regular, rem(1) };
+    ui::text(c.dl(), c.at(0, c.y), label, col(c.p.text), "Server fingerprint");
+    c.y += label.line() + 4;
+    // code.fingerprint: monospace .8rem, word-break: break-all
+    Font code{ fonts.mono, rem(0.8f) };
+    std::string rest = fp;
+    while (!rest.empty()) {
+        size_t n = rest.size();
+        while (n > 1 && ui::text_width(code, std::string_view(rest).substr(0, n)) > c.width) n--;
+        ui::text(c.dl(), c.at(0, c.y), code, col(c.p.muted), std::string_view(rest).substr(0, n));
+        rest.erase(0, n);
+        c.y += code.line();
+    }
+    note(c, "Remembered the first time you connected. If it ever changes, TCP Chat warns you and does not "
+            "connect.");
+    end_section(c);
+}
+
 } // namespace
 
-bool draw_settings_panel(SettingsUi& ui, Settings& s, const Palette& p, WallpaperRenderer& wr) {
+bool draw_settings_panel(SettingsUi& ui, Settings& s, const Palette& p, WallpaperRenderer& wr,
+                         const std::string& server_fp) {
     if (!ui.open) return false;
     const ImGuiViewport* vp = ImGui::GetMainViewport();
     const float pw = std::min(PANEL_W, vp->WorkSize.x);
@@ -411,6 +435,7 @@ bool draw_settings_panel(SettingsUi& ui, Settings& s, const Palette& p, Wallpape
     colors(c);
     background(c, ui);
     text_layout(c);
+    connection(c, server_fp);
     c.y += PAD_BOTTOM;
 
     // Let the window know how tall the content is, for scrolling.

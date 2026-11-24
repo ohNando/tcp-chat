@@ -37,12 +37,11 @@ static bool save_ppm(const char* path, int w, int h) {
 
 static void usage(const char* prog) {
     std::fprintf(stderr,
-                 "Usage: %s [--connect host port name] [--say text] [--trust] [--settings] [--emoji] [--dm name]\n"
+                 "Usage: %s [--connect host port name] [--say text] [--settings] [--emoji] [--dm name]\n"
                  "          [--theme id] [--wallpaper id|image]\n"
                  "          [--size WxH] [--screenshot out.ppm --wait seconds]\n"
                  "  --connect     connect on start-up\n"
                  "  --say         send a message once joined\n"
-                 "  --trust       accept an unknown server key without asking\n"
                  "  --settings    open the settings window on start-up\n"
                  "  --emoji       open the emoji picker once joined (for screenshots)\n"
                  "  --dm          open a private chat with name once joined (for screenshots)\n"
@@ -68,8 +67,6 @@ int main(int argc, char** argv) {
             autorun.connect = true;
         } else if (!std::strcmp(argv[i], "--say") && i + 1 < argc) {
             autorun.say = argv[++i];
-        } else if (!std::strcmp(argv[i], "--trust")) {
-            autorun.trust = true;
         } else if (!std::strcmp(argv[i], "--settings")) {
             autorun.open_settings = true;
         } else if (!std::strcmp(argv[i], "--theme") && i + 1 < argc) {

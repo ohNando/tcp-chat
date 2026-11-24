@@ -245,7 +245,8 @@ int ChatClient::verify(const unsigned char pk[IDENTITY_PK_BYTES]) {
         return -1;
     }
 
-    // Unknown server: refuse for now and let the user decide in the UI.
+    // Unknown server: refuse for now; the UI decides (the desktop app
+    // remembers it right away, trust on first use like the web client).
     std::memcpy(pending_pk_, pk, IDENTITY_PK_BYTES);
     trust_pending_ = true;
     return -1;
@@ -258,7 +259,6 @@ void ChatClient::acceptPendingKey() {
         fail("Cannot write " + known_path_);
         return;
     }
-    addLine(ChatLine::System, "New server, fingerprint saved: " + server_fp_);
     connect(host_, port_, name_);
 }
 

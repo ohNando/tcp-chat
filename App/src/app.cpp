@@ -195,7 +195,9 @@ void App::poll() {
 
     countUnread();
 
-    if (autorun_.trust && client_.trustPending()) client_.acceptPendingKey();
+    // Trust on first use, like the web client: a new server is remembered
+    // silently (its fingerprint is in Settings); a changed key is refused.
+    if (client_.trustPending()) client_.acceptPendingKey();
     if (!said_ && !autorun_.say.empty() && client_.state() == ConnState::Chatting) {
         client_.sendText(autorun_.say);
         said_ = true;
@@ -239,11 +241,11 @@ void App::draw() {
         drawChat();
     else
         drawLogin();
-    drawTrustPrompt();
     drawIdentityWarning();
     ImGui::End();
 
-    if (draw_settings_panel(settings_ui_, settings_, palette_, wallpaper_)) look_dirty_ = true;
+    if (draw_settings_panel(settings_ui_, settings_, palette_, wallpaper_, client_.serverFingerprint()))
+        look_dirty_ = true;
     pollImagePicker();
 }
 
@@ -828,34 +830,6 @@ bool begin_dialog(const char* id, bool want_open, float width, float* height, co
 }
 
 } // namespace
-
-void App::drawTrustPrompt() {
-    static float height = 300;
-    const Palette& p = palette_;
-    if (!begin_dialog("Unknown server", client_.trustPending(), 560, &height, p.accent, p)) return;
-    Dialog d{ ImGui::GetWindowDrawList(), ImVec2(ImGui::GetWindowPos().x + 28, ImGui::GetWindowPos().y + 28), 504 };
-    d.heading("Unknown server", p.text);
-    d.para("This is the first connection to " + client_.host() + ":" + std::to_string(client_.port()) +
-               ". Check that the fingerprint below matches the one the server printed when it started.",
-           p.text);
-    d.field("Fingerprint", client_.serverFingerprint(), p);
-    d.y += 8;
-    d.para("It will be saved to " + client_.knownServersPath(), p.muted, Font{ fonts.regular, rem(0.85f) });
-
-    ImGui::SetCursorScreenPos(ImVec2(d.at.x, d.at.y + d.y));
-    if (ui::button("Trust and connect", p, ui::Button::Primary)) {
-        client_.acceptPendingKey();
-        ImGui::CloseCurrentPopup();
-    }
-    float tw = ui::text_width(Font{ fonts.semibold, rem(1) }, "Trust and connect") + 36;
-    ImGui::SetCursorScreenPos(ImVec2(d.at.x + tw + 10, d.at.y + d.y));
-    if (ui::button("Cancel", p, ui::Button::Link)) {
-        client_.rejectPendingKey();
-        ImGui::CloseCurrentPopup();
-    }
-    height = d.y + rem(1) * 1.45f + 20 + 56;
-    ImGui::EndPopup();
-}
 
 void App::drawIdentityWarning() {
     static float height = 360;

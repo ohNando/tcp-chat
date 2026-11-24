@@ -16,5 +16,7 @@ struct SettingsUi {
 };
 
 // Draws the panel while ui.open is true. Returns true when a setting
-// changed (the caller re-applies the look and saves).
-bool draw_settings_panel(SettingsUi& ui, Settings& s, const Palette& p, WallpaperRenderer& wr);
+// changed (the caller re-applies the look and saves). `server_fp` is shown
+// in the Connection section when known.
+bool draw_settings_panel(SettingsUi& ui, Settings& s, const Palette& p, WallpaperRenderer& wr,
+                         const std::string& server_fp);
