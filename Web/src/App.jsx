@@ -62,7 +62,7 @@ function SettingsButton({ onClick }) {
   )
 }
 
-function LoginScreen({ status, error, fingerprint, onLogin, onOpenSettings }) {
+function LoginScreen({ status, error, onLogin, onOpenSettings }) {
   const [name, setName] = useState('')
   const canJoin = status === Status.READY && name.trim().length >= 2
 
@@ -86,11 +86,6 @@ function LoginScreen({ status, error, fingerprint, onLogin, onOpenSettings }) {
       />
       <button type="submit" disabled={!canJoin}>Join chat</button>
       {error && <p className="error">{error}</p>}
-      {fingerprint && (
-        <p className="server-key">
-          Server key <Fingerprint value={fingerprint} />
-        </p>
-      )}
     </form>
   )
 }
@@ -300,7 +295,7 @@ export default function App() {
   const panel = settingsOpen && (
     <SettingsPanel settings={look.settings} update={look.update} palette={look.palette}
                    customWallpaper={look.customWallpaper} setCustomWallpaper={look.setCustomWallpaper}
-                   onClose={() => setSettingsOpen(false)} />
+                   serverFingerprint={chat.serverFingerprint} onClose={() => setSettingsOpen(false)} />
   )
 
   if (chat.status === Status.UNTRUSTED) {
@@ -322,7 +317,7 @@ export default function App() {
                     safetyWith={chat.safetyWith} onTyping={chat.notifyTyping}
                     onDismissError={chat.clearError} onOpenSettings={openSettings} look={look} />
       ) : (
-        <LoginScreen status={chat.status} error={chat.error} fingerprint={chat.serverFingerprint}
+        <LoginScreen status={chat.status} error={chat.error}
                      onLogin={chat.login} onOpenSettings={openSettings} />
       )}
       {panel}

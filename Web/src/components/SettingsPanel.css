@@ -285,6 +285,15 @@ input.toggle:checked::after {
   transform: translateX(18px);
 }
 
+.settings-panel .setting-label {
+  margin-bottom: 4px;
+}
+
+.settings-panel .fingerprint {
+  display: block;
+  color: var(--muted);
+}
+
 @keyframes slide-in {
   from { transform: translateX(100%); }
   to { transform: none; }

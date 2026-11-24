@@ -154,8 +154,23 @@ function Notifications({ settings, update }) {
   )
 }
 
+function Connection({ fingerprint }) {
+  if (!fingerprint) return null
+  return (
+    <section>
+      <h3>Connection</h3>
+      <p className="setting-label">Server fingerprint</p>
+      <code className="fingerprint">{fingerprint}</code>
+      <p className="note">
+        Remembered the first time you connected. If it ever changes, TCP Chat
+        warns you and does not connect.
+      </p>
+    </section>
+  )
+}
+
 export default function SettingsPanel({ settings, update, palette, customWallpaper, setCustomWallpaper,
-                                        onClose }) {
+                                        serverFingerprint, onClose }) {
   useEffect(() => {
     const onKey = (e) => { if (e.key === 'Escape') onClose() }
     window.addEventListener('keydown', onKey)
@@ -213,6 +228,7 @@ export default function SettingsPanel({ settings, update, palette, customWallpap
         </section>
 
         <Notifications settings={settings} update={update} />
+        <Connection fingerprint={serverFingerprint} />
       </aside>
     </div>
   )

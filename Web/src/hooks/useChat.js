@@ -206,8 +206,8 @@ export function useChat() {
             setStatus(Status.UNTRUSTED)
             return false
           }
-          if (pin === Pin.NEW)
-            addMessage({ kind: 'system', text: `New server, fingerprint saved: ${fp}` })
+          // A new server is remembered silently (trust on first use); its
+          // fingerprint is shown in Settings for those who want to check it.
           return true
         },
       })
