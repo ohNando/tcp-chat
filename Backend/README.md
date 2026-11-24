@@ -49,6 +49,7 @@ make run-server
 | `-d` | none | directory to serve over HTTP (e.g. `../Web/dist`) |
 | `-m` | `64` | maximum number of members, 1–256 |
 | `-k` | `server_identity.key` | identity key file, created on first start |
+| `-t` | `75` | idle timeout in seconds: silent connections are pinged, then dropped |
 
 `make run-server` passes `-d ../Web/dist` automatically if the web client
 has been built (`npm run build` in `Web`).
@@ -66,6 +67,17 @@ ignored by git). Deleting it gives the server a new identity, and every
 client will then warn that the key changed.
 
 Stop the server with Ctrl+C; it closes all connections and exits cleanly.
+
+## Benchmark
+
+```bash
+tools/bench.sh                     # standard scenarios, fresh server each
+./bin/bench -c 200 -r 5 -d 10 -P <server_pid> 127.0.0.1 8080
+```
+
+`bin/bench` opens many encrypted connections and reports throughput,
+round-trip latency percentiles and the server's CPU and memory. Results and
+analysis are in [docs/PERFORMANCE.md](../docs/PERFORMANCE.md).
 
 ## Run the terminal client
 

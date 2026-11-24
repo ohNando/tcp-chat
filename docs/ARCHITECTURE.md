@@ -49,6 +49,15 @@ up in its own output buffer and, once that buffer passes 1 MiB, it is
 disconnected. `MSG_NOSIGNAL` and an ignored `SIGPIPE` make a vanished peer a
 normal error instead of a crash.
 
+### Heartbeat
+
+`check_timeouts()` runs about once a second: it closes connections that
+never finish the handshake (10 s), sends a `PING` to established
+connections that have been silent for 40 % of the idle timeout, and drops
+those that stay silent for the whole timeout (75 s by default). Without it,
+a client whose network vanished would stay in the room forever, because TCP
+never notices a peer that just stops answering.
+
 ### Connection lifecycle
 
 ```
@@ -115,6 +124,7 @@ The app compiles the protocol and crypto modules straight from
 |---|---|
 | `make test` (Backend) | unit tests for every module, including crypto attacks |
 | `make memcheck` (Backend) | the same tests under valgrind |
+| `tools/bench.sh` (Backend) | load scenarios, see [PERFORMANCE.md](PERFORMANCE.md) |
 | `npm test` (Web) | JavaScript codec and pinning |
 | `npm run e2e` (Web) | real server + a WebSocket and a TCP client in one room |
 | `client_smoke` (App) | the desktop networking layer against a real server |
