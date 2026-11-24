@@ -20,6 +20,7 @@ struct AutoRun {
     std::string say;
     bool trust = false;
     bool open_settings = false;
+    bool open_emoji = false;
 };
 
 class App {
@@ -34,6 +35,8 @@ private:
     void drawChatScreen();
     void drawMessages(float height);
     void drawInput();
+    void drawEmojiPicker();
+    void insertIntoInput(const char* text);
     void drawTyping();
     void drawDmBanner();
     const char* dmTarget() const;
@@ -71,6 +74,7 @@ private:
     int port_ = 8080;
     char name_[NAME_MAX_LEN + 1] = "";
     char input_[TEXT_MAX_LEN + 1] = "";
+    int input_cursor_ = 0;        // byte offset of the text cursor
     bool focus_input_ = true;
     uint64_t seen_version_ = 0;   // lines version drawn last frame
     std::string dm_target_;       // private-message recipient, empty = room

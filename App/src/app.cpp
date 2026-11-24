@@ -371,17 +371,85 @@ void App::drawTyping() {
         ImGui::TextDisabled("%zu people are typing...", names.size());
 }
 
+// Common emoji, same set as the web client's picker (without the U+FE0F
+// variation selectors, which the monochrome font does not need).
+static const char* const EMOJI_GROUPS[][2] = {
+    { "Smileys", "😀 😃 😄 😁 😆 😅 😂 🤣 😊 😇 🙂 😉 😍 🥰 😘 😋 😜 🤪 😎 🤩 🥳 😏 😌 🤔 🤨 😐 😴 🥱 "
+                 "😮 😲 😳 🥺 😢 😭 😤 😡 🤯 😱 🤗 🤭 🙄 😬" },
+    { "Gestures", "👍 👎 👌 ✌ 🤞 🤟 🤘 👏 🙌 👐 🤝 🙏 💪 👋 🤙 ☝ 👉 👈 👆 👇 ✋ 🫶" },
+    { "Hearts", "❤ 🧡 💛 💚 💙 💜 🖤 🤍 💔 💕 💖 💯 ✨ 🔥 ⭐ 🌟 ⚡ 🎉 🎊 🎈" },
+    { "Things", "☕ 🍕 🍔 🍟 🍰 🎂 🍿 🍺 🍷 ⚽ 🏀 🎮 🎧 🎵 📷 💻 📱 💡 📌 🔒 🔑 ⏰ 📅 ✅ ❌ ⚠ 🚀 🌍 🌙 ☀ "
+               "🌧 🌈 🐱 🐶 🌸 🌳" },
+};
+
+void App::insertIntoInput(const char* text) {
+    size_t len = std::strlen(input_), add = std::strlen(text);
+    if (len + add >= sizeof(input_)) return;
+    size_t at = std::min(static_cast<size_t>(std::max(0, input_cursor_)), len);
+    std::memmove(input_ + at + add, input_ + at, len - at + 1);
+    std::memcpy(input_ + at, text, add);
+    input_cursor_ = static_cast<int>(at + add);
+}
+
+void App::drawEmojiPicker() {
+    ImGui::SetNextWindowSize(ImVec2(360, 300));
+    if (!ImGui::BeginPopup("emoji")) return;
+    const float cell = ImGui::GetFontSize() * 1.9f;
+    int per_row = std::max(1, static_cast<int>(ImGui::GetContentRegionAvail().x / (cell + 2)));
+    for (auto& group : EMOJI_GROUPS) {
+        ImGui::TextDisabled("%s", group[0]);
+        std::string list = group[1];
+        size_t pos = 0;
+        int i = 0;
+        while (pos < list.size()) {
+            size_t end = list.find(' ', pos);
+            if (end == std::string::npos) end = list.size();
+            std::string e = list.substr(pos, end - pos);
+            pos = end + 1;
+            if (e.empty()) continue;
+            if (i++ % per_row) ImGui::SameLine(0, 2);
+            ImGui::PushFont(nullptr, ImGui::GetStyle().FontSizeBase * 1.35f);
+            // Stays open so several emoji can be added in a row.
+            bool picked = ImGui::Selectable(e.c_str(), false, ImGuiSelectableFlags_NoAutoClosePopups,
+                                            ImVec2(cell, cell));
+            ImGui::PopFont();
+            if (picked) insertIntoInput(e.c_str());
+        }
+        ImGui::Spacing();
+    }
+    ImGui::EndPopup();
+}
+
 void App::drawInput() {
-    const float button_w = 90.0f;
-    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - button_w - ImGui::GetStyle().ItemSpacing.x);
+    const float button_w = 90.0f, emoji_w = ImGui::GetFrameHeight() * 1.3f;
+    const float spacing = ImGui::GetStyle().ItemSpacing.x;
+    ImGui::BeginDisabled(client_.state() != ConnState::Chatting);
+
+    if (ImGui::Button("😊", ImVec2(emoji_w, 0)) || autorun_.open_emoji) {
+        ImGui::OpenPopup("emoji");
+        autorun_.open_emoji = false;
+    }
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Emoji");
+    // Above the input, right-aligned to the button.
+    ImVec2 bmin = ImGui::GetItemRectMin();
+    ImGui::SetNextWindowPos(ImVec2(bmin.x, bmin.y - 6), ImGuiCond_Appearing, ImVec2(0, 1));
+    drawEmojiPicker();
+
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - button_w - spacing);
     if (focus_input_) {
         ImGui::SetKeyboardFocusHere();
         focus_input_ = false;
     }
-    ImGui::BeginDisabled(client_.state() != ConnState::Chatting);
+    // The callback remembers the cursor so emoji are inserted where it was.
+    auto track_cursor = [](ImGuiInputTextCallbackData* d) {
+        *static_cast<int*>(d->UserData) = d->CursorPos;
+        return 0;
+    };
     bool enter = ImGui::InputTextWithHint("##input", "Type a message, /users or /quit",
                                           input_, sizeof(input_),
-                                          ImGuiInputTextFlags_EnterReturnsTrue);
+                                          ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_CallbackAlways,
+                                          track_cursor, &input_cursor_);
     if (ImGui::IsItemEdited()) {
         bool has_text = std::strspn(input_, " \t") != std::strlen(input_);
         if (!dmTarget()) client_.notifyTyping(has_text); // never announce typing a DM
@@ -409,6 +477,7 @@ void App::submitInput() {
     } else if (!client_.sendText(text))
         return; // keep the text so the user can fix it
     input_[0] = '\0';
+    input_cursor_ = 0;
 }
 
 static void fingerprint_text(const std::string& fp) {
