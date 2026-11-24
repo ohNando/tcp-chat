@@ -138,6 +138,8 @@ truncated payloads and trailing bytes are all rejected.
 | `PING` | `0x05` | empty |
 | `PONG` | `0x06` | empty |
 | `TYPING` | `0x07` | `u8 active` (1 = typing, 0 = stopped) |
+| `KEY` | `0x08` | `key[32]`: the user's X25519 public key for private messages |
+| `DM` | `0x09` | `str to` · `nonce[24]` · `u16 len` · `box[len]` |
 
 `PING` and `PONG` work in both directions: the receiver of a `PING`
 answers with a `PONG`.
@@ -161,6 +163,8 @@ forever. Clients must answer with `PONG`; any other traffic also counts.
 | `USERS` | `0x85` | `u16 count` · `count × str name` |
 | `ERR` | `0x86` | `u16 code` · `str text` |
 | `USER_TYPING` | `0x87` | `str name` · `u8 active` |
+| `PEER_KEY` | `0x88` | `str name` · `key[32]` |
+| `DM_RECV` | `0x89` | `u64 timestamp_ms` · `str from` · `str to` · `nonce[24]` · `u16 len` · `box[len]` |
 
 The server forwards a member's `TYPING` to everybody else as
 `USER_TYPING`. Clients send `active = 1` at most every 2 seconds while the
@@ -178,6 +182,8 @@ hides the indicator if it is not refreshed within 5 seconds.
 | 5 | `ALREADY_REGISTERED` | second `NAME` on the same connection |
 | 6 | `ROOM_FULL` | member limit reached (connection is closed) |
 | 7 | `TEXT_INVALID` | empty, too long, or contains control characters |
+| 8 | `NO_SUCH_USER` | a `DM` names someone who is not in the room |
+| 9 | `NO_KEY` | a `DM` before the sender, or to someone who has not, sent `KEY` |
 
 ## Session flow
 
@@ -196,6 +202,35 @@ client                         server
 
 The sender receives its own `CHAT` back: the server is the single source of
 truth for what was said and in which order.
+
+## Private messages (end-to-end encrypted)
+
+Private messages are encrypted by the sender for the recipient; the server
+only relays the ciphertext and cannot read it.
+
+**Keys.** Every user has a long-term X25519 key pair (`crypto_box`), kept on
+the device (`~/.config/tcp-chat/user.key` for the terminal and desktop
+clients, `localStorage` in the browser). After `WELCOME` a client sends its
+public key in `KEY`. The server forwards it to everybody else as `PEER_KEY`
+and sends each newcomer a `PEER_KEY` for every member that already has one.
+
+**Box.** The plaintext is `u64 sent_at_ms | str text`. It is encrypted with
+`crypto_box_easy(plaintext, nonce, recipient_pk, sender_sk)`
+(X25519 + XSalsa20-Poly1305) and a random 24-byte nonce. The server sends
+the resulting `DM_RECV` to the recipient **and back to the sender**: both
+derive the same shared key, so the sender can open its own copy, and every
+client shows what the server actually delivered.
+
+The recipient checks the text with the same rules as chat text, because the
+server cannot.
+
+**Safety number.** The server hands out the keys, so a malicious server
+could substitute its own. Clients therefore show a safety number for each
+conversation: BLAKE2b-256 over `"TCHT-safety-v1"` followed by the two public
+keys in ascending byte order, printed as eight groups of five digits
+(each group is a big-endian u32 of the hash modulo 100000). Both people see
+the same number and can compare it out of band. Clients also remember each
+`host:port/name`'s key and warn if it changes.
 
 ## Content rules
 

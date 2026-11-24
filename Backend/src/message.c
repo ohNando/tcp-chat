@@ -8,6 +8,27 @@ void message_init(message_t* m, uint8_t type) {
     m->type = type;
 }
 
+/* nonce[24] | u16 len | box[len] */
+static void put_box(bytebuf_t* b, const message_t* m) {
+    if (m->box_len > DM_BOX_MAX) {
+        b->error = 1;
+        return;
+    }
+    bb_put_bytes(b, m->nonce, DM_NONCE_BYTES);
+    bb_put_u16(b, m->box_len);
+    bb_put_bytes(b, m->box, m->box_len);
+}
+
+static void get_box(bytebuf_t* b, message_t* m) {
+    bb_get_bytes(b, m->nonce, DM_NONCE_BYTES);
+    if (bb_get_u16(b, &m->box_len) < 0) return;
+    if (m->box_len > DM_BOX_MAX) {
+        b->error = 1;
+        return;
+    }
+    bb_get_bytes(b, m->box, m->box_len);
+}
+
 static void encode_payload(const message_t* m, bytebuf_t* b) {
     switch (m->type) {
         case FT_NAME:
@@ -39,6 +60,23 @@ static void encode_payload(const message_t* m, bytebuf_t* b) {
             break;
         case FT_TYPING:
             bb_put_u8(b, m->active ? 1 : 0);
+            break;
+        case FT_KEY:
+            bb_put_bytes(b, m->key, DM_KEY_BYTES);
+            break;
+        case FT_PEER_KEY:
+            bb_put_str(b, m->name);
+            bb_put_bytes(b, m->key, DM_KEY_BYTES);
+            break;
+        case FT_DM:
+            bb_put_str(b, m->to);
+            put_box(b, m);
+            break;
+        case FT_DM_RECV:
+            bb_put_u64(b, m->timestamp);
+            bb_put_str(b, m->name);
+            bb_put_str(b, m->to);
+            put_box(b, m);
             break;
         case FT_USER_TYPING:
             bb_put_str(b, m->name);
@@ -106,6 +144,23 @@ static void decode_payload(message_t* m, bytebuf_t* b) {
             break;
         case FT_TYPING:
             bb_get_u8(b, &m->active);
+            break;
+        case FT_KEY:
+            bb_get_bytes(b, m->key, DM_KEY_BYTES);
+            break;
+        case FT_PEER_KEY:
+            bb_get_str(b, m->name, sizeof(m->name));
+            bb_get_bytes(b, m->key, DM_KEY_BYTES);
+            break;
+        case FT_DM:
+            bb_get_str(b, m->to, sizeof(m->to));
+            get_box(b, m);
+            break;
+        case FT_DM_RECV:
+            bb_get_u64(b, &m->timestamp);
+            bb_get_str(b, m->name, sizeof(m->name));
+            bb_get_str(b, m->to, sizeof(m->to));
+            get_box(b, m);
             break;
         case FT_USER_TYPING:
             bb_get_str(b, m->name, sizeof(m->name));

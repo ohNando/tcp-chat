@@ -13,6 +13,11 @@ export const NAME_MAX_LEN = 24
 export const TEXT_MAX_LEN = 2000
 export const USERS_MAX = 256
 
+export const DM_KEY_BYTES = 32
+export const DM_NONCE_BYTES = 24
+// Poly1305 tag (16) + plaintext (u64 sent_at + str text)
+export const DM_BOX_MAX = 16 + 8 + 2 + TEXT_MAX_LEN
+
 export const FT = Object.freeze({
   // client -> server
   NAME: 0x01,
@@ -22,6 +27,8 @@ export const FT = Object.freeze({
   PING: 0x05,
   PONG: 0x06,
   TYPING: 0x07,
+  KEY: 0x08,
+  DM: 0x09,
   // server -> client
   WELCOME: 0x81,
   CHAT: 0x82,
@@ -30,6 +37,8 @@ export const FT = Object.freeze({
   USERS: 0x85,
   ERR: 0x86,
   USER_TYPING: 0x87,
+  PEER_KEY: 0x88,
+  DM_RECV: 0x89,
 })
 
 // Frame flags (header byte 2). Unknown flags are ignored.
@@ -45,6 +54,8 @@ export const ERR = Object.freeze({
   ALREADY_REGISTERED: 5,
   ROOM_FULL: 6,
   TEXT_INVALID: 7,
+  NO_SUCH_USER: 8,
+  NO_KEY: 9,
 })
 
 const KNOWN_TYPES = new Set(Object.values(FT))
@@ -86,6 +97,12 @@ class Writer {
     this.pos += bytes.length
   }
 
+  raw(bytes) {
+    this.reserve(bytes.length)
+    this.buf.set(bytes, this.pos)
+    this.pos += bytes.length
+  }
+
   bytes() { return this.buf.slice(0, this.pos) }
 }
 
@@ -118,7 +135,37 @@ class Reader {
     }
   }
 
+  raw(n) {
+    this.need(n)
+    const out = this.bytes.slice(this.pos, this.pos + n)
+    this.pos += n
+    return out
+  }
+
   get remaining() { return this.bytes.length - this.pos }
+}
+
+function fixed(bytes, n, what) {
+  if (!(bytes instanceof Uint8Array) || bytes.length !== n)
+    throw new ProtocolError(`${what} must be ${n} bytes`)
+  return bytes
+}
+
+// nonce[24] | u16 len | box[len]
+function writeBox(w, m) {
+  fixed(m.nonce, DM_NONCE_BYTES, 'nonce')
+  if (!(m.box instanceof Uint8Array) || m.box.length > DM_BOX_MAX)
+    throw new ProtocolError('box too large')
+  w.raw(m.nonce)
+  w.u16(m.box.length)
+  w.raw(m.box)
+}
+
+function readBox(r, m) {
+  m.nonce = r.raw(DM_NONCE_BYTES)
+  const len = r.u16()
+  if (len > DM_BOX_MAX) throw new ProtocolError('box too large')
+  m.box = r.raw(len)
 }
 
 function writePayload(w, m) {
@@ -152,6 +199,23 @@ function writePayload(w, m) {
     case FT.USER_TYPING:
       w.str(m.name, NAME_MAX_LEN)
       w.u8(m.active ? 1 : 0)
+      break
+    case FT.KEY:
+      w.raw(fixed(m.key, DM_KEY_BYTES, 'key'))
+      break
+    case FT.PEER_KEY:
+      w.str(m.name, NAME_MAX_LEN)
+      w.raw(fixed(m.key, DM_KEY_BYTES, 'key'))
+      break
+    case FT.DM:
+      w.str(m.to, NAME_MAX_LEN)
+      writeBox(w, m)
+      break
+    case FT.DM_RECV:
+      w.u64(m.timestamp)
+      w.str(m.name, NAME_MAX_LEN)
+      w.str(m.to, NAME_MAX_LEN)
+      writeBox(w, m)
       break
     case FT.USERS_REQ:
     case FT.QUIT:
@@ -197,6 +261,23 @@ function readPayload(r, type) {
     case FT.USER_TYPING:
       m.name = r.str(NAME_MAX_LEN)
       m.active = r.u8() !== 0
+      break
+    case FT.KEY:
+      m.key = r.raw(DM_KEY_BYTES)
+      break
+    case FT.PEER_KEY:
+      m.name = r.str(NAME_MAX_LEN)
+      m.key = r.raw(DM_KEY_BYTES)
+      break
+    case FT.DM:
+      m.to = r.str(NAME_MAX_LEN)
+      readBox(r, m)
+      break
+    case FT.DM_RECV:
+      m.timestamp = Number(r.u64())
+      m.name = r.str(NAME_MAX_LEN)
+      m.to = r.str(NAME_MAX_LEN)
+      readBox(r, m)
       break
     default:
       break

@@ -66,3 +66,19 @@ test('typing messages round-trip', () => {
   const t = roundTrip({ type: FT.USER_TYPING, name: 'ayşe', active: false })
   assert.deepEqual([t.name, t.active], ['ayşe', false])
 })
+
+test('key and dm messages round-trip', () => {
+  const key = new Uint8Array(32).map((_, i) => i)
+  assert.deepEqual([...roundTrip({ type: FT.KEY, key }).key], [...key])
+  const pk = roundTrip({ type: FT.PEER_KEY, name: 'veli', key })
+  assert.equal(pk.name, 'veli')
+
+  const nonce = new Uint8Array(24).fill(7)
+  const box = new Uint8Array(40).fill(9)
+  const dm = roundTrip({ type: FT.DM_RECV, timestamp: 42, name: 'ali', to: 'veli', nonce, box })
+  assert.deepEqual([dm.timestamp, dm.name, dm.to], [42, 'ali', 'veli'])
+  assert.deepEqual([...dm.nonce], [...nonce])
+  assert.deepEqual([...dm.box], [...box])
+
+  assert.throws(() => encodeMessage({ type: FT.KEY, key: new Uint8Array(31) }), ProtocolError)
+})

@@ -4,8 +4,8 @@
 int frame_type_known(uint8_t type) {
     switch (type) {
         case FT_NAME: case FT_MSG: case FT_USERS_REQ: case FT_QUIT:
-        case FT_PING: case FT_PONG: case FT_TYPING:
-        case FT_USER_TYPING:
+        case FT_PING: case FT_PONG: case FT_TYPING: case FT_KEY: case FT_DM:
+        case FT_USER_TYPING: case FT_PEER_KEY: case FT_DM_RECV:
         case FT_WELCOME: case FT_CHAT: case FT_JOIN: case FT_LEAVE:
         case FT_USERS: case FT_ERR:
             return 1;
@@ -24,6 +24,10 @@ const char* frame_type_name(uint8_t type) {
         case FT_PONG:      return "PONG";
         case FT_TYPING:    return "TYPING";
         case FT_USER_TYPING: return "USER_TYPING";
+        case FT_KEY:       return "KEY";
+        case FT_DM:        return "DM";
+        case FT_PEER_KEY:  return "PEER_KEY";
+        case FT_DM_RECV:   return "DM_RECV";
         case FT_WELCOME:   return "WELCOME";
         case FT_CHAT:      return "CHAT";
         case FT_JOIN:      return "JOIN";

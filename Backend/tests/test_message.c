@@ -168,12 +168,56 @@ TEST(typing_round_trips) {
     CHECK_EQ_INT(out.active, 0);
 }
 
+TEST(key_and_dm_round_trip) {
+    message_init(&in, FT_KEY);
+    for (int i = 0; i < DM_KEY_BYTES; i++) in.key[i] = (uint8_t)i;
+    CHECK_EQ_INT(round_trip(), 0);
+    CHECK_EQ_MEM(out.key, in.key, DM_KEY_BYTES);
+
+    message_init(&in, FT_PEER_KEY);
+    strcpy(in.name, "veli");
+    memset(in.key, 0xAB, DM_KEY_BYTES);
+    CHECK_EQ_INT(round_trip(), 0);
+    CHECK_EQ_STR(out.name, "veli");
+    CHECK_EQ_MEM(out.key, in.key, DM_KEY_BYTES);
+
+    message_init(&in, FT_DM_RECV);
+    in.timestamp = 42;
+    strcpy(in.name, "ali");
+    strcpy(in.to, "veli");
+    memset(in.nonce, 7, DM_NONCE_BYTES);
+    in.box_len = 40;
+    memset(in.box, 9, 40);
+    CHECK_EQ_INT(round_trip(), 0);
+    CHECK_EQ_STR(out.to, "veli");
+    CHECK_EQ_INT(out.box_len, 40);
+    CHECK_EQ_MEM(out.nonce, in.nonce, DM_NONCE_BYTES);
+    CHECK_EQ_MEM(out.box, in.box, 40);
+}
+
+TEST(dm_box_length_is_limited) {
+    message_init(&in, FT_DM);
+    strcpy(in.to, "veli");
+    in.box_len = DM_BOX_MAX + 1;
+    CHECK_EQ_INT(message_encode(&in, 0, wire, sizeof(wire)), -1);
+
+    /* A frame claiming a longer box than allowed is rejected. */
+    in.box_len = 4;
+    int n = message_encode(&in, 0, wire, sizeof(wire));
+    size_t len_at = FRAME_HEADER_SIZE + 2 + 4 + DM_NONCE_BYTES;  /* str "veli" then nonce */
+    wire[len_at] = 0xFF;
+    wire[len_at + 1] = 0xFF;
+    CHECK_EQ_INT(message_decode(wire, (size_t)n, &out, NULL), -1);
+}
+
 int main(void) {
     RUN(name_round_trips);
     RUN(msg_and_welcome_round_trip);
     RUN(chat_round_trips);
     RUN(flags_round_trip);
     RUN(typing_round_trips);
+    RUN(key_and_dm_round_trip);
+    RUN(dm_box_length_is_limited);
     RUN(join_and_leave_round_trip);
     RUN(users_round_trip);
     RUN(err_round_trips);

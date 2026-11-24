@@ -17,6 +17,13 @@
  *   ERR       u16 code | str text
  *   TYPING       u8 active                  (client -> server)
  *   USER_TYPING  str name | u8 active       (server -> client)
+ *   KEY          key[32]                    (client -> server)
+ *   PEER_KEY     str name | key[32]         (server -> client)
+ *   DM           str to | nonce[24] | u16 len | box[len]          (client -> server)
+ *   DM_RECV      u64 ts | str from | str to | nonce[24] | u16 len | box[len]
+ *
+ * DM boxes are end-to-end encrypted between the two users (see dm.h); the
+ * server only relays them.
  *
  * Decoding is strict: truncated payloads and trailing bytes are rejected.
  */
@@ -30,6 +37,11 @@
 #define TEXT_MAX_LEN  2000
 #define USERS_MAX     256
 
+#define DM_KEY_BYTES   32
+#define DM_NONCE_BYTES 24
+/* Box = Poly1305 tag (16) + plaintext (u64 sent_at + str text). */
+#define DM_BOX_MAX     (16 + 8 + 2 + TEXT_MAX_LEN)
+
 typedef enum {
     ERR_PROTOCOL          = 1,
     ERR_NAME_INVALID      = 2,
@@ -38,15 +50,22 @@ typedef enum {
     ERR_ALREADY_REGISTERED = 5,
     ERR_ROOM_FULL         = 6,
     ERR_TEXT_INVALID      = 7,
+    ERR_NO_SUCH_USER      = 8,
+    ERR_NO_KEY            = 9,
 } error_code_t;
 
 typedef struct {
     uint8_t type;
     uint8_t flags;                           /* FLAG_* from frame.h */
-    uint64_t timestamp;                      /* CHAT */
+    uint64_t timestamp;                      /* CHAT, DM_RECV */
     uint16_t code;                           /* ERR */
     uint8_t active;                          /* TYPING, USER_TYPING */
-    char name[NAME_MAX_LEN + 1];             /* NAME, CHAT, JOIN, LEAVE */
+    char name[NAME_MAX_LEN + 1];             /* NAME, CHAT, JOIN, LEAVE, PEER_KEY, DM_RECV (from) */
+    char to[NAME_MAX_LEN + 1];               /* DM, DM_RECV */
+    uint8_t key[DM_KEY_BYTES];               /* KEY, PEER_KEY */
+    uint8_t nonce[DM_NONCE_BYTES];           /* DM, DM_RECV */
+    uint16_t box_len;                        /* DM, DM_RECV */
+    uint8_t box[DM_BOX_MAX];                 /* DM, DM_RECV */
     char text[TEXT_MAX_LEN + 1];             /* MSG, WELCOME, CHAT, ERR */
     uint16_t user_count;                     /* USERS */
     char users[USERS_MAX][NAME_MAX_LEN + 1]; /* USERS */
