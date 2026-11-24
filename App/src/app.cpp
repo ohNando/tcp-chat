@@ -11,8 +11,6 @@
 #include "chat_view.h"
 #include "settings_ui.h"
 
-static const ImVec4 DM_COLOR(0.72f, 0.55f, 1.0f, 1.0f);
-
 static double now_s() {
     using namespace std::chrono;
     return duration<double>(steady_clock::now().time_since_epoch()).count();
@@ -27,14 +25,6 @@ static const char* state_text(ConnState s) {
         case ConnState::Chatting:     return "Online";
     }
     return "";
-}
-
-static ImVec4 state_color(ConnState s) {
-    switch (s) {
-        case ConnState::Chatting:     return ImVec4(0.35f, 0.85f, 0.45f, 1.0f);
-        case ConnState::Disconnected: return ImVec4(1.0f, 0.45f, 0.45f, 1.0f);
-        default:                      return ImVec4(1.0f, 0.75f, 0.3f, 1.0f);
-    }
 }
 
 App::App(const AutoRun& autorun) : autorun_(autorun), settings_path_(settings_path()) {
@@ -165,7 +155,7 @@ void App::drawConnectScreen() {
     if (!busy && !client_.lastError().empty()) {
         ImGui::Spacing();
         ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + width);
-        ImGui::TextColored(ImVec4(1.0f, 0.45f, 0.45f, 1.0f), "%s", client_.lastError().c_str());
+        ImGui::TextColored(palette_.danger, "%s", client_.lastError().c_str());
         ImGui::PopTextWrapPos();
     }
     ImGui::EndGroup();
@@ -179,22 +169,47 @@ void App::leave() {
 }
 
 void App::drawStatusBar() {
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    const float h = ImGui::GetFontSize() * 2.4f; // header height
+    const float r = h * 0.42f;
+    ImVec2 cur = ImGui::GetCursorScreenPos();
+
+    // Room icon: "#" on an accent circle.
+    ImVec2 center(cur.x + r, cur.y + h / 2);
+    dl->AddCircleFilled(center, r, to_u32(palette_.accent));
+    ImVec2 hs = ImGui::CalcTextSize("#");
+    dl->AddText(ImVec2(center.x - hs.x / 2, center.y - hs.y / 2), to_u32(palette_.accent_text), "#");
+
+    // Title and a status line under it.
+    ImGui::SetCursorScreenPos(ImVec2(cur.x + 2 * r + 12, cur.y + h / 2 - ImGui::GetTextLineHeight()));
+    ImGui::BeginGroup();
     ImGui::TextUnformatted("TCP Chat");
-    ImGui::SameLine();
-    ImGui::TextDisabled("|  %s @ %s:%d  |", client_.name().c_str(), client_.host().c_str(), client_.port());
-    ImGui::SameLine();
     ConnState s = client_.state();
-    ImGui::TextColored(state_color(s), "%s", state_text(s));
-    if (s == ConnState::Disconnected && reconnect_at_ > 0) {
-        ImGui::SameLine();
-        ImGui::TextDisabled("(retrying in %.0fs)", std::ceil(std::max(0.0, reconnect_at_ - now_s())));
-    }
+    ImVec4 dot = s == ConnState::Chatting ? palette_.ok : s == ConnState::Disconnected ? palette_.danger : palette_.warn;
+    float small = ImGui::GetFontSize() * 0.82f;
+    ImVec2 sp = ImGui::GetCursorScreenPos();
+    dl->AddCircleFilled(ImVec2(sp.x + 4, sp.y + small * 0.62f), 4, to_u32(dot));
+    char status[160];
+    if (s == ConnState::Disconnected && reconnect_at_ > 0)
+        std::snprintf(status, sizeof(status), "Disconnected, retrying in %.0fs",
+                      std::ceil(std::max(0.0, reconnect_at_ - now_s())));
+    else if (s == ConnState::Chatting)
+        std::snprintf(status, sizeof(status), "Online · %zu online · signed in as %s", client_.users().size(),
+                      client_.name().c_str());
+    else
+        std::snprintf(status, sizeof(status), "%s", state_text(s));
+    dl->AddText(ImGui::GetFont(), small, ImVec2(sp.x + 14, sp.y), to_u32(palette_.muted), status);
+    ImGui::Dummy(ImVec2(ImGui::CalcTextSize(status).x, small));
+    ImGui::EndGroup();
 
     const float button_w = 90.0f;
-    ImGui::SameLine(ImGui::GetContentRegionMax().x - 2 * button_w - ImGui::GetStyle().ItemSpacing.x);
+    ImGui::SetCursorScreenPos(ImVec2(cur.x + ImGui::GetContentRegionAvail().x - 2 * button_w -
+                                     ImGui::GetStyle().ItemSpacing.x,
+                                     cur.y + (h - ImGui::GetFrameHeight()) / 2));
     if (ImGui::Button("Settings", ImVec2(button_w, 0))) settings_open_ = !settings_open_;
     ImGui::SameLine();
     if (ImGui::Button("Leave", ImVec2(button_w, 0))) leave();
+    ImGui::SetCursorScreenPos(ImVec2(cur.x, cur.y + h + 4));
     ImGui::Separator();
 }
 
@@ -225,32 +240,48 @@ void App::drawUsers(float height) {
     std::vector<std::string> users = client_.users();
     std::sort(users.begin(), users.end());
 
-    ImGui::TextDisabled("ONLINE - %zu", users.size());
-    ImGui::Separator();
+    ImGui::TextDisabled("ONLINE · %zu", users.size());
+    ImGui::Spacing();
     bool any_dm = false;
+    const float row_h = ImGui::GetFontSize() * 2.0f, r = row_h * 0.4f;
+    ImDrawList* dl = ImGui::GetWindowDrawList();
     for (const std::string& u : users) {
-        ImGui::TextColored(ImVec4(0.35f, 0.85f, 0.45f, 1.0f), "*");
-        ImGui::SameLine();
-        if (u == client_.name()) {
-            ImGui::Text("%s (you)", u.c_str());
-        } else if (client_.canDm(u)) {
-            // Click to write privately (end-to-end encrypted); click again to go back.
-            any_dm = true;
-            ImGui::PushStyleColor(ImGuiCol_Text, DM_COLOR);
-            std::string label = u + " [dm]";
-            if (ImGui::Selectable(label.c_str(), dm_target_ == u)) {
-                dm_target_ = dm_target_ == u ? "" : u;
-                focus_input_ = true;
-            }
-            ImGui::PopStyleColor();
-        } else {
-            ImGui::TextUnformatted(u.c_str());
+        bool self = u == client_.name();
+        bool dm = !self && client_.canDm(u);
+        any_dm |= dm;
+
+        ImGui::PushID(u.c_str());
+        ImVec2 p0 = ImGui::GetCursorScreenPos();
+        // Click a name to write privately (end-to-end encrypted); again to go back.
+        ImGui::BeginDisabled(!dm);
+        bool clicked = ImGui::Selectable("##row", dm_target_ == u, ImGuiSelectableFlags_None,
+                                         ImVec2(0, row_h));
+        ImGui::EndDisabled();
+        if (clicked) {
+            dm_target_ = dm_target_ == u ? "" : u;
+            focus_input_ = true;
         }
+        ImVec2 c(p0.x + r + 2, p0.y + row_h / 2);
+        draw_avatar(dl, c, r, u);
+        dl->AddCircleFilled(ImVec2(c.x + r * 0.72f, c.y + r * 0.72f), 4.5f, to_u32(palette_.panel));
+        dl->AddCircleFilled(ImVec2(c.x + r * 0.72f, c.y + r * 0.72f), 3.2f, to_u32(palette_.ok));
+
+        float ty = p0.y + (row_h - ImGui::GetFontSize()) / 2;
+        dl->AddText(ImVec2(c.x + r + 10, ty), to_u32(palette_.text), u.c_str());
+        if (self) {
+            float w = ImGui::CalcTextSize(u.c_str()).x;
+            dl->AddText(ImVec2(c.x + r + 14 + w, ty), to_u32(palette_.muted), "(you)");
+        } else if (dm) {
+            ImVec2 ts = ImGui::CalcTextSize("DM");
+            float x = p0.x + ImGui::GetContentRegionAvail().x - ts.x - 6;
+            dl->AddText(ImVec2(x, ty), to_u32(palette_.dm), "DM");
+        }
+        ImGui::PopID();
     }
     if (any_dm) {
         ImGui::Spacing();
         ImGui::PushTextWrapPos(0.0f);
-        ImGui::TextDisabled("Click a name for an encrypted private message.");
+        ImGui::TextDisabled("Click a name for an end-to-end encrypted private message.");
         ImGui::PopTextWrapPos();
     }
     ImGui::EndChild();
@@ -283,7 +314,7 @@ const char* App::dmTarget() const {
 void App::drawDmBanner() {
     const char* to = dmTarget();
     if (!to) return;
-    ImGui::PushStyleColor(ImGuiCol_Text, DM_COLOR);
+    ImGui::PushStyleColor(ImGuiCol_Text, palette_.dm);
     ImGui::Text("Private message to %s (end-to-end encrypted)   safety number %s", to,
                 client_.safetyWith(to).c_str());
     ImGui::PopStyleColor();
