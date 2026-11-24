@@ -26,5 +26,9 @@
 #define SERVER_LISTEN_BACKLOG      128
 #define SERVER_SPARE_SLOTS         8
 #define SERVER_HANDSHAKE_TIMEOUT_MS 10000
+/* Heartbeat: a connection silent for 40% of the idle timeout gets a PING;
+ * one silent for the whole timeout is considered dead (pulled cable,
+ * suspended laptop: TCP alone would keep it "open" forever). */
+#define SERVER_DEFAULT_IDLE_TIMEOUT_S 75
 
 #endif

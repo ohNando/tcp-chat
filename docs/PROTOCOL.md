@@ -134,6 +134,17 @@ truncated payloads and trailing bytes are all rejected.
 | `PING` | `0x05` | empty |
 | `PONG` | `0x06` | empty |
 
+`PING` and `PONG` work in both directions: the receiver of a `PING`
+answers with a `PONG`.
+
+### Heartbeat
+
+The server sends a `PING` to any connection that has been silent for 40 %
+of its idle timeout (75 s by default, `-t` on the server), and closes a
+connection that sends nothing at all for the whole timeout. This removes
+dead peers (pulled cable, suspended laptop) that TCP alone would keep open
+forever. Clients must answer with `PONG`; any other traffic also counts.
+
 ### Server → client
 
 | Type | Code | Payload |

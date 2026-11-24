@@ -26,6 +26,7 @@ static source_t sigsrc = { SRC_SIGNAL, -1 };
 static int running = 1;
 static identity_t identity;
 static size_t max_members = SERVER_DEFAULT_MAX_CLIENTS;
+static uint64_t idle_timeout_ms = SERVER_DEFAULT_IDLE_TIMEOUT_S * 1000u;
 static char web_root[PATH_MAX];   /* resolved; empty = no static files */
 static room_t room;
 static int next_conn_id = 1;
@@ -432,6 +433,7 @@ static void handle_readable(conn_t* c) {
         return;
     }
     framer_commit(&c->in, (size_t)n);
+    c->last_rx_ms = now_ms();
 
     if (c->transport == TRANSPORT_HTTP) {
         handle_http(c);
@@ -480,7 +482,7 @@ static void accept_clients(const source_t* l) {
             close(fd);
             continue;
         }
-        c->created_ms = now_ms();
+        c->created_ms = c->last_rx_ms = now_ms();
 
         struct epoll_event ev = { .events = EPOLLIN, .data.ptr = c };
         if (epoll_ctl(epfd, EPOLL_CTL_ADD, fd, &ev) < 0) {
@@ -536,24 +538,45 @@ static void update_conn(conn_t* c) {
     }
 }
 
-/* Connections that never finish the handshake would otherwise hold a slot
- * forever (a cheap way to fill the server). */
-static void expire_handshakes(void) {
+/* Runs about once a second:
+ *  - connections that never finish the handshake would otherwise hold a
+ *    slot forever (a cheap way to fill the server);
+ *  - established connections that went quiet get a PING, and are dropped
+ *    when nothing at all arrives for the idle timeout. */
+static void check_timeouts(void) {
     uint64_t now = now_ms();
+    uint64_t ping_after = idle_timeout_ms * 2 / 5;
+
     for (size_t i = 0; i < room.max; i++) {
         conn_t* c = room.slots[i];
-        if (c && !c->want_close && !secure_established(&c->sec) && c->file_fd < 0 &&
-            c->sec.state != SECURE_PEER_FINISHED &&
-            now - c->created_ms > SERVER_HANDSHAKE_TIMEOUT_MS) {
-            log_info("conn %d (%s): handshake timed out", c->id, c->peer);
+        if (!c || c->want_close || c->file_fd >= 0) continue;
+
+        if (!secure_established(&c->sec)) {
+            if (c->sec.state != SECURE_PEER_FINISHED &&
+                now - c->created_ms > SERVER_HANDSHAKE_TIMEOUT_MS) {
+                log_info("conn %d (%s): handshake timed out", c->id, c->peer);
+                c->want_close = 1;
+            }
+            continue;
+        }
+
+        uint64_t idle = now - c->last_rx_ms;
+        if (idle > idle_timeout_ms) {
+            log_info("conn %d (%s): no response for %llu s, dropping", c->id, c->peer,
+                     (unsigned long long)(idle / 1000));
             c->want_close = 1;
+        } else if (idle > ping_after && now - c->last_ping_ms > ping_after) {
+            message_t ping;
+            message_init(&ping, FT_PING);
+            room_send_to(c, &ping);
+            c->last_ping_ms = now;
         }
     }
 }
 
 static void sweep(void) {
     int again;
-    expire_handshakes();
+    check_timeouts();
     do {
         again = 0;
         for (size_t i = 0; i < room.max; i++) {
@@ -646,14 +669,15 @@ static void run(void) {
 
 static void usage(const char* prog) {
     fprintf(stderr,
-            "Usage: %s [-p port] [-w ws_port] [-d web_root] [-m max_clients] [-k key_file]\n"
+            "Usage: %s [-p port] [-w ws_port] [-d web_root] [-m max_clients] [-k key_file] [-t seconds]\n"
             "  -p  TCP port to listen on (default %d)\n"
             "  -w  HTTP/WebSocket port, 0 to disable (default %d)\n"
             "  -d  directory with the web client to serve over HTTP (default: none)\n"
             "  -m  maximum simultaneous clients, 1-%d (default %d)\n"
-            "  -k  server identity key, created if missing (default %s)\n",
+            "  -k  server identity key, created if missing (default %s)\n"
+            "  -t  drop connections silent for this long, pinging them first (default %d)\n",
             prog, SERVER_DEFAULT_PORT, SERVER_DEFAULT_WS_PORT, USERS_MAX, SERVER_DEFAULT_MAX_CLIENTS,
-            IDENTITY_DEFAULT_PATH);
+            IDENTITY_DEFAULT_PATH, SERVER_DEFAULT_IDLE_TIMEOUT_S);
 }
 
 /* Parses a decimal integer in [min, max]; returns -1 if invalid. */
@@ -672,7 +696,7 @@ int main(int argc, char** argv) {
     const char* key_path = IDENTITY_DEFAULT_PATH;
     int opt;
 
-    while ((opt = getopt(argc, argv, "p:w:d:m:k:h")) != -1) {
+    while ((opt = getopt(argc, argv, "p:w:d:m:k:t:h")) != -1) {
         long v;
         switch (opt) {
             case 'p':
@@ -702,6 +726,13 @@ int main(int argc, char** argv) {
                     fprintf(stderr, "invalid web root %s: %s\n", optarg, strerror(errno));
                     return 1;
                 }
+                break;
+            case 't':
+                if ((v = parse_int(optarg, 2, 86400)) < 0) {
+                    fprintf(stderr, "invalid idle timeout: %s\n", optarg);
+                    return 1;
+                }
+                idle_timeout_ms = (uint64_t)v * 1000u;
                 break;
             case 'k':
                 key_path = optarg;
