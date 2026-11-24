@@ -162,7 +162,8 @@ void App::drawChatScreen() {
     drawStatusBar();
     const float users_w = 200.0f;
     const float input_h = ImGui::GetFrameHeightWithSpacing() + 6.0f;
-    const float body_h = ImGui::GetContentRegionAvail().y - input_h;
+    const float typing_h = ImGui::GetTextLineHeightWithSpacing();
+    const float body_h = ImGui::GetContentRegionAvail().y - input_h - typing_h;
     const float spacing = ImGui::GetStyle().ItemSpacing.x;
 
     ImGui::BeginGroup();
@@ -174,6 +175,7 @@ void App::drawChatScreen() {
     ImGui::EndGroup();
     ImGui::SameLine();
     drawUsers(body_h);
+    drawTyping();
     drawInput();
 }
 
@@ -254,6 +256,18 @@ void App::drawMessages(float height) {
     ImGui::EndChild();
 }
 
+void App::drawTyping() {
+    std::vector<std::string> names = client_.typingNames();
+    if (names.empty())
+        ImGui::TextUnformatted(" "); // keep the line so the layout does not jump
+    else if (names.size() == 1)
+        ImGui::TextDisabled("%s is typing...", names[0].c_str());
+    else if (names.size() == 2)
+        ImGui::TextDisabled("%s and %s are typing...", names[0].c_str(), names[1].c_str());
+    else
+        ImGui::TextDisabled("%zu people are typing...", names.size());
+}
+
 void App::drawInput() {
     const float button_w = 90.0f;
     ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - button_w - ImGui::GetStyle().ItemSpacing.x);
@@ -265,6 +279,10 @@ void App::drawInput() {
     bool enter = ImGui::InputTextWithHint("##input", "Type a message, /users or /quit",
                                           input_, sizeof(input_),
                                           ImGuiInputTextFlags_EnterReturnsTrue);
+    if (ImGui::IsItemEdited()) {
+        bool has_text = std::strspn(input_, " \t") != std::strlen(input_);
+        client_.notifyTyping(has_text);
+    }
     ImGui::SameLine();
     if (ImGui::Button("Send", ImVec2(button_w, 0)) || enter) submitInput();
     ImGui::EndDisabled();

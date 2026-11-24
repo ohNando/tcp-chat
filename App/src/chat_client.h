@@ -6,6 +6,7 @@
 #pragma once
 
 #include <cstdint>
+#include <map>
 #include <memory>
 #include <string>
 #include <vector>
@@ -43,6 +44,12 @@ public:
 
     bool sendText(const std::string& text);
     bool requestUsers();
+
+    // Typing indicator. Call on every edit of the input box; it sends
+    // TYPING at most every 2 s, and "stopped" when the box is cleared.
+    void notifyTyping(bool has_text);
+    // Members currently typing (indicators expire after 5 s).
+    std::vector<std::string> typingNames();
     void quit();
 
     // ---- trust on first use -------------------------------------------
@@ -104,6 +111,10 @@ private:
     std::vector<ChatLine> lines_;
     uint64_t lines_version_ = 0;
     std::string last_error_;
+
+    std::map<std::string, double> typing_;  // name -> expiry (steady seconds)
+    bool typing_active_ = false;
+    double typing_sent_at_ = 0;
 
     bool trust_pending_ = false;
     bool identity_changed_ = false;

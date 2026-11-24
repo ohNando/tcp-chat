@@ -14,6 +14,8 @@
 
 static constexpr double CONNECT_TIMEOUT_S = 5.0;
 static constexpr size_t MAX_LINES = 1000;
+static constexpr double TYPING_RESEND_S = 2.0;
+static constexpr double TYPING_SHOW_S = 5.0;
 
 static double now_s() {
     using namespace std::chrono;
@@ -93,6 +95,8 @@ void ChatClient::closeSocket() {
     framer_init(&in_, RECORD_MAX_BODY);
     tx_seq_ = 0;
     users_.clear();
+    typing_.clear();
+    typing_active_ = false;
 }
 
 void ChatClient::disconnect() {
@@ -292,15 +296,23 @@ void ChatClient::handleMessage(const message_t& m) {
             bool history = (m.flags & FLAG_HISTORY) != 0;
             // History replayed after a reconnect must not repeat lines.
             if (history && alreadyShown(m)) break;
+            if (!history) typing_.erase(m.name); // the message ends their typing
             addLine(ChatLine::Chat, m.text, m.name, m.timestamp, name_ == m.name, history);
             break;
         }
+        case FT_USER_TYPING:
+            if (m.active)
+                typing_[m.name] = now_s() + TYPING_SHOW_S;
+            else
+                typing_.erase(m.name);
+            break;
         case FT_JOIN:
             if (std::find(users_.begin(), users_.end(), m.name) == users_.end())
                 users_.emplace_back(m.name);
             addLine(ChatLine::System, std::string(m.name) + " joined the chat");
             break;
         case FT_LEAVE:
+            typing_.erase(m.name);
             users_.erase(std::remove(users_.begin(), users_.end(), m.name), users_.end());
             addLine(ChatLine::System, std::string(m.name) + " left the chat");
             break;
@@ -343,7 +355,37 @@ bool ChatClient::sendText(const std::string& text) {
     }
     message_init(scratch_.get(), FT_MSG);
     std::snprintf(scratch_->text, sizeof(scratch_->text), "%s", text.c_str());
+    typing_active_ = false; // the message itself tells others we stopped
     return sendMessage(*scratch_);
+}
+
+void ChatClient::notifyTyping(bool has_text) {
+    if (state_ != ConnState::Chatting) return;
+    double now = now_s();
+    if (has_text && typing_active_ && now - typing_sent_at_ < TYPING_RESEND_S) return;
+    if (!has_text && !typing_active_) return;
+
+    static message_t m;
+    message_init(&m, FT_TYPING);
+    m.active = has_text ? 1 : 0;
+    if (sendMessage(m)) {
+        typing_active_ = has_text;
+        typing_sent_at_ = now;
+    }
+}
+
+std::vector<std::string> ChatClient::typingNames() {
+    double now = now_s();
+    std::vector<std::string> names;
+    for (auto it = typing_.begin(); it != typing_.end();) {
+        if (it->second <= now) {
+            it = typing_.erase(it);
+        } else {
+            names.push_back(it->first);
+            ++it;
+        }
+    }
+    return names;
 }
 
 bool ChatClient::requestUsers() {
