@@ -115,6 +115,43 @@ TEST(flush_reports_error_when_peer_closed) {
     conn_destroy(c);
 }
 
+TEST(interleaved_queue_and_partial_flush_keep_byte_order) {
+    int sv[2];
+    socketpair(AF_UNIX, SOCK_STREAM, 0, sv);
+    int small = 4096;
+    setsockopt(sv[0], SOL_SOCKET, SO_SNDBUF, &small, sizeof(small));
+    net_set_nonblocking(sv[0]);
+    net_set_nonblocking(sv[1]);
+    conn_t* c = conn_create(sv[0], 1, NULL, &test_identity, TRANSPORT_TCP);
+
+    /* Write a counting byte pattern in odd-sized chunks while the peer
+     * drains slowly; everything must come out once and in order. */
+    enum { TOTAL = 600000 };
+    static uint8_t chunk[7919];
+    uint32_t next_out = 0, next_in = 0;
+    int ok = 1;
+    while (next_in < TOTAL && ok) {
+        if (next_out < TOTAL) {
+            size_t n = sizeof(chunk);
+            if (n > TOTAL - next_out) n = TOTAL - next_out;
+            for (size_t i = 0; i < n; i++) chunk[i] = (uint8_t)((next_out + i) * 31);
+            if (conn_queue(c, chunk, n) == 0) next_out += (uint32_t)n;
+        }
+        conn_flush(c);
+        uint8_t buf[3000];
+        ssize_t r = read(sv[1], buf, sizeof(buf));
+        for (ssize_t i = 0; i < r && ok; i++, next_in++)
+            ok = buf[i] == (uint8_t)(next_in * 31);
+    }
+    CHECK(ok);
+    CHECK_EQ_INT(next_in, TOTAL);
+    CHECK(c->out_cap <= CONN_OUT_MAX);
+
+    close(sv[0]);
+    close(sv[1]);
+    conn_destroy(c);
+}
+
 int main(void) {
     if (sodium_init() < 0) return 1;
     test_identity_init();
@@ -124,5 +161,6 @@ int main(void) {
     RUN(flush_keeps_remainder_when_peer_is_slow);
     RUN(output_backlog_is_capped);
     RUN(flush_reports_error_when_peer_closed);
+    RUN(interleaved_queue_and_partial_flush_keep_byte_order);
     return TEST_REPORT();
 }

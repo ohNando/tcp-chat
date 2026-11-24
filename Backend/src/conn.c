@@ -55,25 +55,39 @@ size_t conn_pending_output(const conn_t* c) {
     return c->out_len - c->out_off;
 }
 
+/* Moves the unsent bytes to the front of the buffer. */
+static void compact(conn_t* c) {
+    size_t pending = conn_pending_output(c);
+    if (pending) memmove(c->out, c->out + c->out_off, pending);
+    c->out_off = 0;
+    c->out_len = pending;
+}
+
 int conn_queue(conn_t* c, const void* data, size_t n) {
-    /* Drop already-sent bytes before growing. */
-    if (c->out_off > 0) {
-        size_t pending = conn_pending_output(c);
-        memmove(c->out, c->out + c->out_off, pending);
-        c->out_off = 0;
-        c->out_len = pending;
+    if (conn_pending_output(c) + n > CONN_OUT_MAX) return -1;
+
+    if (c->out_len + n > c->out_cap) {
+        /* Out of room at the end. Reclaim the already-sent prefix only when
+         * it is at least as large as what would have to move: every byte
+         * copied is then paid for by a byte that was sent, so queueing stays
+         * amortized O(1) even for a slow reader with a large backlog
+         * (compacting on every call made that quadratic). */
+        if (c->out_off > 0 && c->out_off >= conn_pending_output(c)) compact(c);
     }
-
-    if (c->out_len + n > CONN_OUT_MAX) return -1;
-
     if (c->out_len + n > c->out_cap) {
         size_t cap = c->out_cap ? c->out_cap : 4096;
         while (cap < c->out_len + n) cap *= 2;
-        if (cap > CONN_OUT_MAX) cap = CONN_OUT_MAX;
-        uint8_t* p = realloc(c->out, cap);
-        if (!p) return -1;
-        c->out = p;
-        c->out_cap = cap;
+        if (cap > CONN_OUT_MAX) {
+            /* At the size limit: compacting is the only way to make room. */
+            compact(c);
+            cap = CONN_OUT_MAX;
+        }
+        if (cap != c->out_cap) {
+            uint8_t* p = realloc(c->out, cap);
+            if (!p) return -1;
+            c->out = p;
+            c->out_cap = cap;
+        }
     }
 
     memcpy(c->out + c->out_len, data, n);
