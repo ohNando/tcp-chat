@@ -219,7 +219,7 @@ static void on_writable(client_t* c) {
 
 /* ---------------- server stats ---------------- */
 
-typedef struct { double cpu_s; long rss_kb, hwm_kb; } proc_stat_t;
+typedef struct { double user_s, sys_s; long rss_kb, hwm_kb; } proc_stat_t;
 
 static int read_proc(int pid, proc_stat_t* s) {
     char path[64], buf[4096];
@@ -234,7 +234,8 @@ static int read_proc(int pid, proc_stat_t* s) {
     unsigned long ut = 0, st = 0;
     if (!p || sscanf(p + 2, "%*c %*d %*d %*d %*d %*d %*u %*u %*u %*u %*u %lu %lu", &ut, &st) != 2)
         return -1;
-    s->cpu_s = (double)(ut + st) / (double)sysconf(_SC_CLK_TCK);
+    s->user_s = (double)ut / (double)sysconf(_SC_CLK_TCK);
+    s->sys_s = (double)st / (double)sysconf(_SC_CLK_TCK);
 
     snprintf(path, sizeof(path), "/proc/%d/status", pid);
     f = fopen(path, "r");
@@ -403,9 +404,13 @@ int main(int argc, char** argv) {
     printf("echoes      %zu/%ld\n", lat_n, sent);
     printf("latency ms  p50 %.2f  p95 %.2f  p99 %.2f  max %.2f\n",
            pct(50), pct(95), pct(99), lat_n ? lat_ms[lat_n - 1] : 0.0);
-    if (have_proc)
-        printf("server      cpu %.0f%%  rss %ld KiB  peak %ld KiB\n",
-               100.0 * (after.cpu_s - before.cpu_s) / (duration + 1.0), after.rss_kb, after.hwm_kb);
+    if (have_proc) {
+        double wall = duration + 1.0;
+        double user = 100.0 * (after.user_s - before.user_s) / wall;
+        double sys = 100.0 * (after.sys_s - before.sys_s) / wall;
+        printf("server      cpu %.0f%% (user %.0f%%, kernel %.0f%%)  rss %ld KiB  peak %ld KiB\n",
+               user + sys, user, sys, after.rss_kb, after.hwm_kb);
+    }
     if (nslow) printf("slow        %d clients never read\n", nslow);
     printf("errors      %ld\n", errors);
 
