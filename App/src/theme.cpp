@@ -1,6 +1,10 @@
 #include "theme.h"
 
 #include <cmath>
+#include <cstdio>
+#include <cstring>
+
+#include "ui.h"
 
 namespace {
 
@@ -38,20 +42,50 @@ float luminance(const ImVec4& c) {
     return 0.2126f * lin(c.x) + 0.7152f * lin(c.y) + 0.0722f * lin(c.z);
 }
 
-const ImVec4 DARK_TEXT = rgb_to_vec(0x111827);
-const ImVec4 WHITE(1, 1, 1, 1);
-
 ImVec4 readable_on(const ImVec4& bg) {
-    return luminance(bg) > 0.4f ? DARK_TEXT : WHITE;
+    return luminance(bg) > 0.4f ? rgb_to_vec(0x111827) : ImVec4(1, 1, 1, 1);
 }
 
-ImVec4 mix(const ImVec4& a, const ImVec4& b, float t) {
-    return ImVec4(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, a.z + (b.z - a.z) * t, 1.0f);
+// shade() in themes.js: toward black (amount > 0) or white (amount < 0),
+// rounded to whole 0..255 steps like its hex output.
+ImVec4 shade(const ImVec4& c, float amount) {
+    float target = amount > 0 ? 0.0f : 1.0f, t = std::fabs(amount);
+    auto ch = [&](float v) { return std::round((v + (target - v) * t) * 255) / 255; };
+    return ImVec4(ch(c.x), ch(c.y), ch(c.z), 1);
 }
 
-ImVec4 with_alpha(ImVec4 c, float a) {
-    c.w = a;
-    return c;
+const Def& find(const std::string& id) {
+    for (const Def& d : DEFS)
+        if (id == d.id) return d;
+    return DEFS[0];
+}
+
+Palette build(const Def& d, int32_t accent, int32_t own, int32_t other) {
+    Palette p;
+    p.dark = d.dark;
+    p.bg = rgb_to_vec(d.bg);
+    p.panel = rgb_to_vec(d.panel);
+    p.panel_alt = rgb_to_vec(d.panel_alt);
+    p.border = rgb_to_vec(d.border);
+    p.text = rgb_to_vec(d.text);
+    p.muted = rgb_to_vec(d.muted);
+    p.accent = rgb_to_vec(accent >= 0 ? accent : d.accent);
+    p.own_bubble = rgb_to_vec(own >= 0 ? own : d.own_bubble);
+    p.other_bubble = rgb_to_vec(other >= 0 ? other : d.other_bubble);
+    p.dm = rgb_to_vec(d.dm);
+    p.danger = rgb_to_vec(0xef4444);
+    p.ok = rgb_to_vec(0x22c55e);
+    p.warn = rgb_to_vec(0xf59e0b);
+
+    p.own_text = readable_on(p.own_bubble);
+    // Light bubble -> dark text; dark bubble -> the theme's own text color on
+    // dark themes (softer than pure white), white otherwise.
+    p.other_text = luminance(p.other_bubble) > 0.4f ? rgb_to_vec(0x111827)
+                                                    : (d.dark ? p.text : ImVec4(1, 1, 1, 1));
+    p.accent_text = readable_on(p.accent);
+    p.accent_hover = shade(p.accent, d.dark ? -0.12f : 0.12f);
+    p.accent_soft = with_alpha(p.accent, 0.15f);
+    return p;
 }
 
 } // namespace
@@ -69,82 +103,87 @@ ImU32 to_u32(const ImVec4& c, float alpha) {
     return ImGui::ColorConvertFloat4ToU32(ImVec4(c.x, c.y, c.z, c.w * alpha));
 }
 
+ImVec4 with_alpha(ImVec4 c, float a) {
+    c.w = a;
+    return c;
+}
+
 const ThemeInfo* theme_list(int* count) {
     *count = static_cast<int>(sizeof(INFOS) / sizeof(INFOS[0]));
     return INFOS;
 }
 
+const char* system_theme() {
+    // Read once: GNOME's color-scheme ("prefer-dark"), else GTK's theme name.
+    static const char* cached = [] {
+        const char* cmds[] = {
+            "gsettings get org.gnome.desktop.interface color-scheme 2>/dev/null",
+            "gsettings get org.gnome.desktop.interface gtk-theme 2>/dev/null",
+        };
+        for (const char* cmd : cmds) {
+            FILE* f = popen(cmd, "r");
+            if (!f) continue;
+            char buf[128] = "";
+            bool got = std::fgets(buf, sizeof(buf), f) != nullptr;
+            pclose(f);
+            if (!got || !buf[0]) continue;
+            if (std::strstr(buf, "dark") || std::strstr(buf, "Dark")) return "midnight";
+            if (std::strstr(buf, "light") || std::strstr(buf, "default")) return "daylight";
+        }
+        return "midnight";
+    }();
+    return cached;
+}
+
+Palette theme_palette(const std::string& id) {
+    return build(find(id.empty() ? system_theme() : id), -1, -1, -1);
+}
+
 Palette resolve_theme(const Settings& s) {
-    const Def* d = &DEFS[0];
-    for (const Def& def : DEFS)
-        if (s.theme == def.id) d = &def;
-
-    Palette p;
-    p.dark = d->dark;
-    p.bg = rgb_to_vec(d->bg);
-    p.panel = rgb_to_vec(d->panel);
-    p.panel_alt = rgb_to_vec(d->panel_alt);
-    p.border = rgb_to_vec(d->border);
-    p.text = rgb_to_vec(d->text);
-    p.muted = rgb_to_vec(d->muted);
-    p.accent = rgb_to_vec(s.accent >= 0 ? s.accent : d->accent);
-    p.own_bubble = rgb_to_vec(s.own_bubble >= 0 ? s.own_bubble : d->own_bubble);
-    p.other_bubble = rgb_to_vec(s.other_bubble >= 0 ? s.other_bubble : d->other_bubble);
-    p.dm = rgb_to_vec(d->dm);
-    p.danger = rgb_to_vec(0xef4444);
-    p.ok = rgb_to_vec(0x22c55e);
-    p.warn = rgb_to_vec(0xf59e0b);
-
-    p.accent_text = readable_on(p.accent);
-    p.accent_hover = mix(p.accent, p.dark ? WHITE : ImVec4(0, 0, 0, 1), 0.12f);
-    p.own_text = readable_on(p.own_bubble);
-    // Same rule as the web client: dark bubble on a dark theme uses the
-    // theme's softer text color.
-    p.other_text = luminance(p.other_bubble) > 0.4f ? DARK_TEXT : (p.dark ? p.text : WHITE);
-    return p;
+    return build(find(s.theme.empty() ? system_theme() : s.theme), s.accent, s.own_bubble, s.other_bubble);
 }
 
 void apply_style(const Palette& p, const Settings& s) {
-    ImGuiStyle& st = ImGui::GetStyle();
-    const float font_size = st.FontSizeBase;
-    st = ImGuiStyle(); // start from defaults so switching themes leaves no traces
-    st.FontSizeBase = font_size;
-    if (p.dark) ImGui::StyleColorsDark(); else ImGui::StyleColorsLight();
+    ui::root_px = s.font_size == "small" ? 13.5f : s.font_size == "large" ? 17.0f : 15.0f;
 
-    const float k = s.compact ? 0.7f : 1.0f;
-    st.WindowPadding = ImVec2(14, 12);
-    st.FramePadding = ImVec2(12, 7 * k);
-    st.ItemSpacing = ImVec2(10, 8 * k);
+    ImGuiStyle& st = ImGui::GetStyle();
+    st = ImGuiStyle(); // start from defaults so switching themes leaves no traces
+    if (p.dark) ImGui::StyleColorsDark(); else ImGui::StyleColorsLight();
+    st.FontSizeBase = ui::root_px * ui::EM;
+    st.FontScaleMain = 1.0f;
+
+    // Layout is placed by hand in CSS pixels; ImGui only lays out popups.
+    st.WindowPadding = ImVec2(0, 0);
+    st.FramePadding = ImVec2(14, 10);
+    st.ItemSpacing = ImVec2(10, 10);
     st.WindowRounding = 0;
-    st.ChildRounding = 10;
+    st.ChildRounding = 0;
     st.FrameRounding = 10;
-    st.PopupRounding = 12;
+    st.PopupRounding = 14;
     st.GrabRounding = 8;
-    st.ScrollbarRounding = 8;
-    st.ScrollbarSize = 10;
+    st.ScrollbarRounding = 6;
+    st.ScrollbarSize = 8;
     st.WindowBorderSize = 0;
-    st.ChildBorderSize = 1;
+    st.ChildBorderSize = 0;
     st.PopupBorderSize = 1;
-    st.FontScaleMain = s.font_size == "small" ? 0.85f : s.font_size == "large" ? 1.15f : 1.0f;
+    st.FrameBorderSize = 0;
 
     ImVec4* c = st.Colors;
     c[ImGuiCol_Text] = p.text;
     c[ImGuiCol_TextDisabled] = p.muted;
-    c[ImGuiCol_WindowBg] = p.panel;
+    c[ImGuiCol_WindowBg] = p.bg;
     c[ImGuiCol_ChildBg] = with_alpha(p.panel, 0);
     c[ImGuiCol_PopupBg] = p.panel;
     c[ImGuiCol_Border] = p.border;
-    c[ImGuiCol_FrameBg] = mix(p.panel_alt, p.border, 0.6f);
-    c[ImGuiCol_FrameBgHovered] = mix(p.panel_alt, p.accent, 0.12f);
-    c[ImGuiCol_FrameBgActive] = mix(p.panel_alt, p.accent, 0.2f);
-    c[ImGuiCol_TitleBg] = p.panel;
-    c[ImGuiCol_TitleBgActive] = p.panel;
-    c[ImGuiCol_Button] = mix(p.panel_alt, p.accent, 0.15f);
-    c[ImGuiCol_ButtonHovered] = mix(p.panel_alt, p.accent, 0.3f);
-    c[ImGuiCol_ButtonActive] = mix(p.panel_alt, p.accent, 0.45f);
-    c[ImGuiCol_Header] = with_alpha(p.accent, 0.22f);
-    c[ImGuiCol_HeaderHovered] = with_alpha(p.accent, 0.16f);
-    c[ImGuiCol_HeaderActive] = with_alpha(p.accent, 0.3f);
+    c[ImGuiCol_FrameBg] = p.panel;
+    c[ImGuiCol_FrameBgHovered] = p.panel;
+    c[ImGuiCol_FrameBgActive] = p.panel;
+    c[ImGuiCol_Button] = p.accent;
+    c[ImGuiCol_ButtonHovered] = p.accent_hover;
+    c[ImGuiCol_ButtonActive] = p.accent_hover;
+    c[ImGuiCol_Header] = p.accent_soft;
+    c[ImGuiCol_HeaderHovered] = p.accent_soft;
+    c[ImGuiCol_HeaderActive] = p.accent_soft;
     c[ImGuiCol_CheckMark] = p.accent;
     c[ImGuiCol_SliderGrab] = p.accent;
     c[ImGuiCol_SliderGrabActive] = p.accent_hover;
@@ -153,17 +192,7 @@ void apply_style(const Palette& p, const Settings& s) {
     c[ImGuiCol_ScrollbarGrab] = p.border;
     c[ImGuiCol_ScrollbarGrabHovered] = p.muted;
     c[ImGuiCol_ScrollbarGrabActive] = p.muted;
-    c[ImGuiCol_ModalWindowDimBg] = ImVec4(0, 0, 0, 0.45f);
-    c[ImGuiCol_NavHighlight] = p.accent;
+    c[ImGuiCol_ModalWindowDimBg] = ImVec4(0, 0, 0, 0.35f);
+    c[ImGuiCol_NavCursor] = with_alpha(p.accent, 0);
     c[ImGuiCol_TextSelectedBg] = with_alpha(p.accent, 0.35f);
-}
-
-bool primary_button(const Palette& p, const char* label, const ImVec2& size) {
-    ImGui::PushStyleColor(ImGuiCol_Button, p.accent);
-    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, p.accent_hover);
-    ImGui::PushStyleColor(ImGuiCol_ButtonActive, p.accent);
-    ImGui::PushStyleColor(ImGuiCol_Text, p.accent_text);
-    bool pressed = ImGui::Button(label, size);
-    ImGui::PopStyleColor(4);
-    return pressed;
 }

@@ -51,22 +51,40 @@ target_include_directories(imgui PUBLIC ${imgui_SOURCE_DIR} ${imgui_SOURCE_DIR}/
 target_compile_definitions(imgui PUBLIC IMGUI_USE_WCHAR32)
 target_link_libraries(imgui PUBLIC PkgConfig::GLFW OpenGL::GL)
 
-# Monochrome Noto Emoji (SIL OFL 1.1), merged into the UI font so emoji
-# render. Color emoji fonts need FreeType, which ImGui does not use here.
-# Optional: without it (offline build) emoji show as boxes.
-set(EMOJI_URL https://raw.githubusercontent.com/google/fonts/06bfe0d62a98375cb09c942fa18e68bd32cff057/ofl/notoemoji)
-set(EMOJI_FONT ${CMAKE_BINARY_DIR}/fonts/NotoEmoji.ttf)
-if(NOT EXISTS ${EMOJI_FONT})
-  file(DOWNLOAD ${EMOJI_URL}/NotoEmoji%5Bwght%5D.ttf ${EMOJI_FONT}
-       EXPECTED_HASH SHA256=de6c18832938afc99caf132b39d6a30a19bac7f2e812e28db2535b4608d27551
-       STATUS emoji_status)
-  list(GET emoji_status 0 emoji_rc)
-  if(emoji_rc EQUAL 0)
-    file(DOWNLOAD ${EMOJI_URL}/OFL.txt ${CMAKE_BINARY_DIR}/fonts/NotoEmoji-OFL.txt)
-  else()
-    file(REMOVE ${EMOJI_FONT})
-    message(WARNING "Could not download Noto Emoji; emoji will not render")
+# Fonts, so the desktop app renders text exactly like the web client does on
+# Linux: Noto Sans in the weights the web CSS uses, Noto Sans Mono for codes and
+# Noto Color Emoji (the bitmap "CBDT" build, drawn by src/emoji_font.cpp).
+# All SIL OFL 1.1, pinned by commit and checked by hash. Optional: without
+# them (offline build) the app falls back to system fonts.
+set(FONT_DIR ${CMAKE_BINARY_DIR}/fonts)
+function(fetch_font url file sha256)
+  if(NOT EXISTS ${FONT_DIR}/${file})
+    file(DOWNLOAD ${url} ${FONT_DIR}/${file} EXPECTED_HASH SHA256=${sha256} STATUS st)
+    list(GET st 0 rc)
+    if(NOT rc EQUAL 0)
+      file(REMOVE ${FONT_DIR}/${file})
+      message(WARNING "Could not download ${file}; using system fonts instead")
+    endif()
   endif()
+endfunction()
+set(NOTO https://raw.githubusercontent.com/notofonts/notofonts.github.io/d14cc173a70dc57962ed2d4ad278fc9df83bf9f3/fonts)
+fetch_font(${NOTO}/NotoSans/hinted/ttf/NotoSans-Regular.ttf NotoSans-Regular.ttf
+           478c558ea716033cd60c03438f628dfa75694dcf6b5f6d505a2f05fd2b4f3823)
+fetch_font(${NOTO}/NotoSans/hinted/ttf/NotoSans-Medium.ttf NotoSans-Medium.ttf
+           635d93d1131d791f2576de90b3bb0f7cdf61929906e8420a61b5f7f8e76420bb)
+fetch_font(${NOTO}/NotoSans/hinted/ttf/NotoSans-SemiBold.ttf NotoSans-SemiBold.ttf
+           a4e91fd530ac2b4ef5367240144ff37d7d65d66cf76f2e9a2187b93c676f92d0)
+fetch_font(${NOTO}/NotoSans/hinted/ttf/NotoSans-Bold.ttf NotoSans-Bold.ttf
+           1df075a380fc7cb898acf64c1f7b3b4dd780de3caa860178bf929de35817a913)
+fetch_font(${NOTO}/NotoSans/hinted/ttf/NotoSans-Italic.ttf NotoSans-Italic.ttf
+           467e3f89eeca4108bb8710a2b9e0cf2281ac56d5b0609211a83776d0505eecb5)
+fetch_font(${NOTO}/NotoSansMono/hinted/ttf/NotoSansMono-Regular.ttf NotoSansMono-Regular.ttf
+           65b5e2b2c4a1fba9ae8be1f026cb35b03dcb8886d9b2a4147054fde12f7e767d)
+fetch_font(https://raw.githubusercontent.com/googlefonts/noto-emoji/8998f5dd683424a73e2314a8c1f1e359c19e8742/fonts/NotoColorEmoji.ttf
+           NotoColorEmoji.ttf 72a635cb3d2f3524c51620cdde406b217204e8a6a06c6a096ff8ed4b5fd6e27b)
+if(NOT EXISTS ${FONT_DIR}/OFL.txt)
+  file(DOWNLOAD https://raw.githubusercontent.com/google/fonts/06bfe0d62a98375cb09c942fa18e68bd32cff057/ofl/notosans/OFL.txt
+       ${FONT_DIR}/OFL.txt)
 endif()
 
 # ---- Shared C core --------------------------------------------------------
@@ -108,10 +126,12 @@ add_executable(tcp-chat-desktop
   src/settings_ui.cpp
   src/stb_image_impl.cpp
   src/wallpaper.cpp
+  src/ui.cpp
+  src/emoji_font.cpp
 )
 target_include_directories(tcp-chat-desktop PRIVATE ${stb_SOURCE_DIR})
 target_compile_options(tcp-chat-desktop PRIVATE -Wall -Wextra)
-target_compile_definitions(tcp-chat-desktop PRIVATE EMOJI_FONT_PATH="${EMOJI_FONT}")
+target_compile_definitions(tcp-chat-desktop PRIVATE FONT_DIR="${FONT_DIR}")
 target_link_libraries(tcp-chat-desktop PRIVATE imgui chat_client Threads::Threads)
 
 # Headless test against a running server: client_smoke <host> <port>

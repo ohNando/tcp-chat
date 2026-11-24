@@ -1,4 +1,5 @@
-// The desktop UI: draws one ImGui frame from ChatClient state.
+// The desktop UI: draws one ImGui frame from ChatClient state, laid out like
+// the web client's screens (Web/src/App.jsx).
 #pragma once
 
 #include <future>
@@ -21,6 +22,7 @@ struct AutoRun {
     bool trust = false;
     bool open_settings = false;
     bool open_emoji = false;
+    std::string dm;          // open a private chat with this user once possible
     std::string theme;       // overrides the saved look for this run
     std::string wallpaper;   // wallpaper id, or an image path
 };
@@ -40,29 +42,32 @@ public:
     bool takeAttentionRequest();
 
 private:
-    void drawConnectScreen();
-    void drawChatScreen();
-    void drawMessages(float height);
-    void drawInput();
-    void drawEmojiPicker();
-    void insertIntoInput(const char* text);
-    void drawTyping();
-    void drawDmBanner();
-    float dmBannerHeight() const;
-    const char* dmTarget() const;
-    void drawUsers(float height);
-    void drawStatusBar();
-    void leave();
-    void submitInput();
+    // Screens and their parts (positions in screen pixels = CSS px).
+    void drawLogin();
+    void drawChat();
+    float drawHeader(ImVec2 at, float width);
+    void drawChatArea(ImVec2 a, ImVec2 b);
+    float dmBannerHeight(float width) const;
+    void drawDmBanner(ImVec2 at, float width);
+    float inputFormHeight() const;
+    void drawInputForm(ImVec2 at, float width);
+    void drawEmojiPicker(ImVec2 form_top_left);
+    void drawUsers(ImVec2 a, ImVec2 b);
     void drawTrustPrompt();
     void drawIdentityWarning();
+
+    std::string statusText() const;
+    const char* dmTarget() const;
+    void insertIntoInput(const char* text);
+    void submitInput();
+    void leave();
     void startConnect();
 
     void saveSettings();
     void applyLook();   // after any change to the look settings
     void pollImagePicker();
     void countUnread();
-    void drawWallpaper();
+    void notify(const std::string& title, const std::string& body);
 
     ChatClient client_;
     AutoRun autorun_;
@@ -71,9 +76,10 @@ private:
     Palette palette_{};
     SettingsUi settings_ui_;
     WallpaperRenderer wallpaper_;
-    std::future<std::string> image_pick_;   // file dialog running on a thread
+    std::future<std::pair<std::string, bool>> image_pick_;   // file dialog running on a thread
     bool look_dirty_ = false;   // re-apply the style before the next frame
     bool said_ = false;
+    bool tried_ = false;        // connected at least once (for the login status line)
 
     // Set once we got into the room; while set, a dropped connection is
     // retried with exponential backoff instead of going back to login.
@@ -82,7 +88,7 @@ private:
     double reconnect_at_ = 0;
 
     char host_[256] = "127.0.0.1";
-    int port_ = 8080;
+    char port_text_[8] = "8080";
     char name_[NAME_MAX_LEN + 1] = "";
     char input_[TEXT_MAX_LEN + 1] = "";
     bool focused_ = true;
@@ -91,6 +97,7 @@ private:
     uint64_t unread_version_ = 0; // lines version counted last
     int input_cursor_ = 0;        // byte offset of the text cursor
     bool focus_input_ = true;
+    bool emoji_open_ = false;
     uint64_t seen_version_ = 0;   // lines version drawn last frame
     std::string dm_target_;       // private-message recipient, empty = room
 };

@@ -2,6 +2,7 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <clocale>
 #include <cstring>
 #include <string>
 #include <vector>
@@ -13,60 +14,10 @@
 #include "imgui_impl_opengl3.h"
 
 #include "app.h"
+#include "ui.h"
 
 static void glfw_error(int code, const char* desc) {
     std::fprintf(stderr, "GLFW error %d: %s\n", code, desc);
-}
-
-static bool file_exists(const char* path) {
-    FILE* f = std::fopen(path, "rb");
-    if (f) std::fclose(f);
-    return f != nullptr;
-}
-
-// ImGui's built-in font only covers ASCII. Use a system font so names like
-// "Şükrü" render; ImGui 1.92 loads glyphs on demand, no ranges needed.
-static void load_font(float size) {
-    static const char* candidates[] = {
-        "/usr/share/fonts/google-noto-vf/NotoSans[wght].ttf",
-        "/usr/share/fonts/noto/NotoSans-Regular.ttf",
-        "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
-        "/usr/share/fonts/liberation-sans-fonts/LiberationSans-Regular.ttf",
-        "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
-        "/usr/share/fonts/dejavu-sans-fonts/DejaVuSans.ttf",
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-        "/System/Library/Fonts/Supplemental/Arial.ttf",
-        "C:\\Windows\\Fonts\\segoeui.ttf",
-    };
-    ImGuiIO& io = ImGui::GetIO();
-    bool loaded = false;
-    for (const char* path : candidates)
-        if (file_exists(path) && io.Fonts->AddFontFromFileTTF(path, size)) {
-            loaded = true;
-            break;
-        }
-    if (!loaded) {
-        std::fprintf(stderr, "warning: no system font found, non-ASCII text may not render\n");
-        io.Fonts->AddFontDefault();
-    }
-
-    // Emoji come from a monochrome emoji font merged into the main one, so
-    // they take the text color. Installed fonts first, then the build's copy.
-    static const char* emoji[] = {
-        "/usr/share/fonts/google-noto-emoji-fonts/NotoEmoji-Regular.ttf",
-        "/usr/share/fonts/noto/NotoEmoji-Regular.ttf",
-        "/usr/share/fonts/truetype/noto/NotoEmoji-Regular.ttf",
-        "/usr/share/fonts/gdouros-symbola/Symbola.ttf",
-        "/usr/share/fonts/truetype/ancient-scripts/Symbola_hint.ttf",
-#ifdef EMOJI_FONT_PATH
-        EMOJI_FONT_PATH,
-#endif
-    };
-    ImFontConfig merge;
-    merge.MergeMode = true;
-    for (const char* path : emoji)
-        if (file_exists(path) && io.Fonts->AddFontFromFileTTF(path, size, &merge)) return;
-    std::fprintf(stderr, "warning: no emoji font found, emoji will show as boxes\n");
 }
 
 // Reads the back buffer and writes a binary PPM (convert with ImageMagick).
@@ -86,17 +37,19 @@ static bool save_ppm(const char* path, int w, int h) {
 
 static void usage(const char* prog) {
     std::fprintf(stderr,
-                 "Usage: %s [--connect host port name] [--say text] [--trust] [--settings] [--emoji]\n"
+                 "Usage: %s [--connect host port name] [--say text] [--trust] [--settings] [--emoji] [--dm name]\n"
                  "          [--theme id] [--wallpaper id|image]\n"
-                 "          [--screenshot out.ppm --wait seconds]\n"
+                 "          [--size WxH] [--screenshot out.ppm --wait seconds]\n"
                  "  --connect     connect on start-up\n"
                  "  --say         send a message once joined\n"
                  "  --trust       accept an unknown server key without asking\n"
                  "  --settings    open the settings window on start-up\n"
                  "  --emoji       open the emoji picker once joined (for screenshots)\n"
-                 "  --theme       midnight, daylight, ocean, forest, sunset or lavender\n"
+                 "  --dm          open a private chat with name once joined (for screenshots)\n"
+                 "  --theme       system, midnight, daylight, ocean, forest, sunset or lavender\n"
                  "  --wallpaper   none, dots, grid, waves, bubbles, aurora, dusk or an image file\n"
                  "                (--theme and --wallpaper apply to this run only)\n"
+                 "  --size        window size, e.g. 1000x680 (the default)\n"
                  "  --screenshot  render in a hidden window for --wait seconds, save, exit\n",
                  prog);
 }
@@ -105,6 +58,7 @@ int main(int argc, char** argv) {
     AutoRun autorun;
     const char* screenshot = nullptr;
     double wait = 1.0;
+    int win_w = 1000, win_h = 680;
 
     for (int i = 1; i < argc; i++) {
         if (!std::strcmp(argv[i], "--connect") && i + 3 < argc) {
@@ -122,10 +76,17 @@ int main(int argc, char** argv) {
             autorun.theme = argv[++i];
         } else if (!std::strcmp(argv[i], "--wallpaper") && i + 1 < argc) {
             autorun.wallpaper = argv[++i];
+        } else if (!std::strcmp(argv[i], "--dm") && i + 1 < argc) {
+            autorun.dm = argv[++i]; // for screenshots
         } else if (!std::strcmp(argv[i], "--emoji")) {
             autorun.open_emoji = true; // for screenshots
         } else if (!std::strcmp(argv[i], "--screenshot") && i + 1 < argc) {
             screenshot = argv[++i];
+        } else if (!std::strcmp(argv[i], "--size") && i + 1 < argc) {
+            if (std::sscanf(argv[++i], "%dx%d", &win_w, &win_h) != 2 || win_w < 320 || win_h < 240) {
+                usage(argv[0]);
+                return 2;
+            }
         } else if (!std::strcmp(argv[i], "--wait") && i + 1 < argc) {
             wait = std::atof(argv[++i]);
         } else {
@@ -133,6 +94,10 @@ int main(int argc, char** argv) {
             return 2;
         }
     }
+
+    // Times and dates follow the system locale, like the browser's; numbers
+    // stay in the C locale (the settings file writes "0.25", not "0,25").
+    std::setlocale(LC_TIME, "");
 
     if (sodium_init() < 0) {
         std::fprintf(stderr, "libsodium initialization failed\n");
@@ -149,7 +114,7 @@ int main(int argc, char** argv) {
 #endif
     if (screenshot) glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
 
-    GLFWwindow* window = glfwCreateWindow(1000, 680, "TCP Chat", nullptr, nullptr);
+    GLFWwindow* window = glfwCreateWindow(win_w, win_h, "TCP Chat", nullptr, nullptr);
     if (!window) {
         glfwTerminate();
         return 1;
@@ -161,7 +126,7 @@ int main(int argc, char** argv) {
     ImGui::CreateContext();
     ImGui::GetIO().IniFilename = nullptr; // no imgui.ini next to the binary
     ImGui::StyleColorsDark();
-    load_font(18.0f);
+    ui::load_fonts();
     ImGui_ImplGlfw_InitForOpenGL(window, true);
     ImGui_ImplOpenGL3_Init("#version 330");
 

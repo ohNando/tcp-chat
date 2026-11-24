@@ -1,89 +1,60 @@
 #include "chat_view.h"
 
 #include <algorithm>
-#include <cfloat>
 #include <cmath>
+#include <cstring>
 #include <ctime>
+#include <langinfo.h>
 
-static constexpr uint64_t GROUP_GAP_MS = 5 * 60 * 1000;
+#include "ui.h"
 
-/* ------------------------------------------------------------------ */
-/* Names                                                               */
-/* ------------------------------------------------------------------ */
+using ui::Font;
+using ui::col;
+using ui::fonts;
+using ui::rem;
 
-static uint32_t name_hash(const std::string& name) {
-    uint32_t h = 2166136261u; // FNV-1a, same as nameHue() in the web client
-    for (unsigned char ch : name) h = (h ^ ch) * 16777619u;
-    return h;
-}
-
-// HSL -> RGB, so hue/saturation/lightness match the web's hsl() colors.
-static ImVec4 hsl(float h, float s, float l) {
-    auto f = [&](float n) {
-        float k = std::fmod(n + h / 30.0f, 12.0f);
-        float a = s * std::min(l, 1 - l);
-        return l - a * std::max(-1.0f, std::min({ k - 3, 9 - k, 1.0f }));
-    };
-    return ImVec4(f(0), f(8), f(4), 1.0f);
-}
-
-ImU32 name_color(const std::string& name, float lightness) {
-    return ImGui::ColorConvertFloat4ToU32(hsl(static_cast<float>(name_hash(name) % 360), 0.6f, lightness));
-}
-
-// First character of a name, upper-cased (including Turkish letters).
-static std::string initial(const std::string& name) {
-    if (name.empty()) return "?";
-    unsigned char c = static_cast<unsigned char>(name[0]);
-    size_t len = c < 0x80 ? 1 : (c >> 5) == 0x6 ? 2 : (c >> 4) == 0xE ? 3 : 4;
-    std::string first = name.substr(0, len);
-    static const char* map[][2] = {
-        { "ç", "Ç" }, { "ğ", "Ğ" }, { "ı", "I" }, { "i", "İ" }, { "ö", "Ö" }, { "ş", "Ş" }, { "ü", "Ü" },
-    };
-    for (auto& m : map)
-        if (first == m[0]) return m[1];
-    if (len == 1 && c >= 'a' && c <= 'z') first[0] = static_cast<char>(c - 32);
-    return first;
-}
-
-void draw_avatar(ImDrawList* dl, ImVec2 center, float radius, const std::string& name) {
-    ImU32 bg = ImGui::ColorConvertFloat4ToU32(hsl(static_cast<float>(name_hash(name) % 360), 0.55f, 0.45f));
-    dl->AddCircleFilled(center, radius, bg);
-    std::string ch = initial(name);
-    float size = radius * 1.05f;
-    ImVec2 ts = ImGui::GetFont()->CalcTextSizeA(size, FLT_MAX, 0, ch.c_str());
-    dl->AddText(ImGui::GetFont(), size, ImVec2(center.x - ts.x / 2, center.y - ts.y / 2), IM_COL32_WHITE, ch.c_str());
-}
+static constexpr uint64_t GROUP_GAP_MS = 5 * 60 * 1000; // groupMessages.js
 
 /* ------------------------------------------------------------------ */
-/* Days                                                                */
+/* Dates                                                               */
 /* ------------------------------------------------------------------ */
 
-static int day_number(uint64_t ms) {
+static struct tm local(uint64_t ms) {
     time_t t = static_cast<time_t>(ms / 1000);
     struct tm tm;
     localtime_r(&t, &tm);
+    return tm;
+}
+
+static int day_number(uint64_t ms) {
+    struct tm tm = local(ms);
     return (tm.tm_year + 1900) * 1000 + tm.tm_yday;
 }
 
-static std::string day_label(uint64_t ms) {
-    uint64_t now = static_cast<uint64_t>(std::time(nullptr)) * 1000;
-    if (day_number(ms) == day_number(now)) return "Today";
-    if (day_number(ms) == day_number(now - 24ull * 3600 * 1000)) return "Yesterday";
-    time_t t = static_cast<time_t>(ms / 1000);
-    struct tm tm;
-    localtime_r(&t, &tm);
-    char buf[32];
-    std::strftime(buf, sizeof(buf), "%d %B %Y", &tm);
+std::string clock_text(uint64_t ms) {
+    // 12-hour clock where the locale uses one (en_US: "%r"), like the browser.
+    static const bool twelve = [] {
+        const char* f = nl_langinfo(T_FMT);
+        return std::strstr(f, "%r") || std::strstr(f, "%I") || std::strstr(f, "%p");
+    }();
+    struct tm tm = local(ms);
+    char buf[16];
+    std::strftime(buf, sizeof(buf), twelve ? "%I:%M %p" : "%H:%M", &tm);
     return buf;
 }
 
-static std::string clock_text(uint64_t ms) {
-    time_t t = static_cast<time_t>(ms / 1000);
-    struct tm tm;
-    localtime_r(&t, &tm);
-    char buf[8];
-    std::strftime(buf, sizeof(buf), "%H:%M", &tm);
+std::string day_label(uint64_t ms) {
+    uint64_t now = static_cast<uint64_t>(std::time(nullptr)) * 1000;
+    if (day_number(ms) == day_number(now)) return "Today";
+    if (day_number(ms) == day_number(now - 24ull * 3600 * 1000)) return "Yesterday";
+    // { day: 'numeric', month: 'long', year only when not this year }
+    struct tm tm = local(ms), today = local(now);
+    bool us = std::strstr(nl_langinfo(D_FMT), "%m/%d") != nullptr; // month-first locales
+    char buf[48];
+    if (tm.tm_year == today.tm_year)
+        std::strftime(buf, sizeof(buf), us ? "%B %-d" : "%-d %B", &tm);
+    else
+        std::strftime(buf, sizeof(buf), us ? "%B %-d, %Y" : "%-d %B %Y", &tm);
     return buf;
 }
 
@@ -95,108 +66,136 @@ namespace {
 
 struct Ctx {
     ImDrawList* dl;
-    ImFont* font;
-    float fs, small;   // body and small text sizes (px)
-    float width;       // available width
     const Palette& p;
-    bool compact;
+    float x, width;    // content box of .messages-box
+    bool compact, narrow;
+    // CSS custom properties (index.css)
+    float radius() const { return compact ? 12 : 16; }
+    float pad_y() const { return compact ? 4 : 8; }
+    float pad_x() const { return compact ? 10 : 12; }
+    float group_gap() const { return compact ? 6 : 12; }
 };
 
-ImU32 col(const ImVec4& c, float alpha) {
-    return ImGui::ColorConvertFloat4ToU32(ImVec4(c.x, c.y, c.z, c.w * alpha));
+void advance(float h) {
+    ImGui::SetCursorPosY(ImGui::GetCursorPosY() + h);
 }
 
-// Centered rounded label: day separators and system lines.
-void pill(Ctx& c, const std::string& text, const ImVec4& fg, float margin) {
-    ImVec2 cur = ImGui::GetCursorScreenPos();
-    float max_w = c.width * 0.85f;
-    ImVec2 ts = c.font->CalcTextSizeA(c.small, FLT_MAX, max_w, text.c_str());
-    float w = ts.x + 24, h = ts.y + 8;
-    ImVec2 p0(cur.x + (c.width - w) / 2, cur.y + margin);
-    c.dl->AddRectFilled(p0, ImVec2(p0.x + w, p0.y + h), col(c.p.panel, 0.92f), h / 2);
-    c.dl->AddRect(p0, ImVec2(p0.x + w, p0.y + h), col(c.p.border, 1), h / 2);
-    c.dl->AddText(c.font, c.small, ImVec2(p0.x + 12, p0.y + 4), col(fg, 1), text.c_str(), nullptr, max_w);
-    ImGui::Dummy(ImVec2(c.width, h + margin + 2));
+// .day-separator / .system-line: a centered pill.
+void pill(Ctx& c, const std::string& text, const ImVec4& fg, bool day) {
+    const float margin_top = day ? 10 : 4, margin_bottom = day ? 6 : 4;
+    Font f{ day ? fonts.semibold : fonts.regular, rem(0.78f) };
+    float max_w = c.width - 24;
+    std::vector<ui::Line> lines = ui::wrap(f, text, max_w);
+    float tw = 0;
+    for (auto& l : lines) tw = std::max(tw, l.width);
+    float w = tw + 24, h = lines.size() * f.line() + 6;
+
+    float top = ImGui::GetCursorScreenPos().y + margin_top;
+    ImVec2 a(std::round(c.x + (c.width - w) / 2), top), b(a.x + w, top + h);
+    ui::shadow(c.dl, a, b, h / 2, 1, 2, 0.12f);
+    c.dl->AddRectFilled(a, b, col(c.p.panel), h / 2);
+    float y = top + 3;
+    for (auto& l : lines) {
+        ui::text(c.dl, ImVec2(a.x + 12 + (tw - l.width) / 2, y), f, col(fg), l.text);
+        y += f.line();
+    }
+    advance(margin_top + h + margin_bottom);
 }
 
 void bubble(Ctx& c, const ChatLine& l, bool first) {
-    const float alpha = l.history ? 0.6f : 1.0f;
+    const float alpha = l.history ? 0.6f : 1.0f; // .msg-row.history
     const bool dm = l.kind == ChatLine::Dm;
-    const float pad_x = c.compact ? 10 : 12, pad_y = c.compact ? 5 : 8;
-    const float radius = c.compact ? 11 : 15;
-    const float avatar_r = 17, avatar_gap = 8;
-    const float left = l.own ? 0 : avatar_r * 2 + avatar_gap;
-    const float max_inner = std::max(80.0f, (c.width - left) * 0.7f - 2 * pad_x);
+    const bool own = l.own;
+    const float avatar = 34, gap = 8;
+    const float px = c.pad_x(), py = c.pad_y();
 
-    // Labels above the text: sender name (others, first of a group) or the
-    // private-message marker.
+    Font body{ fonts.regular, rem(1) };
+    Font name_f{ fonts.bold, rem(0.82f) };
+    Font dm_f{ fonts.bold, rem(0.75f) };
+    Font time_f{ fonts.regular, rem(0.68f), 1.0f };
+
     std::string label;
-    ImVec4 label_color = c.p.dm;
-    if (dm) label = l.own ? "🔒 Private to " + l.to : "🔒 Private from " + l.name;
-    else if (first && !l.own) label = l.name;
-
-    ImVec2 text_sz = c.font->CalcTextSizeA(c.fs, FLT_MAX, max_inner, l.text.c_str());
+    if (dm) label = std::string("🔒 Private ") + (own ? "to " + l.to : "from " + l.name);
+    bool show_name = first && !own && !dm;
     std::string time = clock_text(l.timestamp);
-    ImVec2 time_sz = c.font->CalcTextSizeA(c.small, FLT_MAX, 0, time.c_str());
-    ImVec2 label_sz = label.empty() ? ImVec2(0, 0) : c.font->CalcTextSizeA(c.small * 1.05f, FLT_MAX, max_inner, label.c_str());
+    float time_w = ui::text_width(time_f, time);
+    const float time_gap = 10; // margin-left of the floated time
 
-    // Time sits after the text when a one-line message leaves room for it,
-    // otherwise on its own line at the bottom right.
-    const float gap = 10;
-    bool single_line = text_sz.y <= c.fs * 1.3f;
-    bool inline_time = single_line && text_sz.x + gap + time_sz.x <= max_inner;
-    float inner_w = std::max({ text_sz.x, label_sz.x, inline_time ? text_sz.x + gap + time_sz.x : time_sz.x });
-    float label_h = label.empty() ? 0 : label_sz.y + 2;
-    float inner_h = label_h + text_sz.y + (inline_time ? 0 : time_sz.y + 2);
-    float bw = inner_w + 2 * pad_x, bh = inner_h + 2 * pad_y;
+    // max-width: min(70%, 560px) of the row; the avatar column takes room too.
+    float row_avail = c.width - (own ? 0 : avatar + gap);
+    float max_outer = std::min({ c.width * (c.narrow ? 0.85f : 0.70f), 560.0f, row_avail });
+    float max_inner = max_outer - 2 * px;
+
+    // Shrink-to-fit: as wide as the content on one line, at most max_inner.
+    std::vector<ui::Line> one = ui::wrap(body, l.text, 0);
+    float content = 0;
+    for (auto& ln : one) content = std::max(content, ln.width);
+    content = std::max(content, one.back().width + time_gap + time_w);
+    if (show_name) content = std::max(content, ui::text_width(name_f, l.name));
+    if (dm) content = std::max(content, ui::text_width(dm_f, label));
+    float inner_w = std::min(content, max_inner);
+    std::vector<ui::Line> lines = content <= max_inner ? one : ui::wrap(body, l.text, inner_w);
+
+    // The time floats right on the last line when it fits, else below it.
+    bool time_inline = lines.back().width + time_gap + time_w <= inner_w + 0.5f;
+    float label_h = show_name ? name_f.line() + 1 : dm ? dm_f.line() + 2 : 0;
+    float text_h = lines.size() * body.line();
+    float float_bottom = (time_inline ? text_h - body.line() : text_h) + 6 + time_f.px - 4;
+    float inner_h = label_h + std::max(text_h, float_bottom);
+    float bw = inner_w + 2 * px, bh = inner_h + 2 * py;
 
     ImVec2 cur = ImGui::GetCursorScreenPos();
-    float top = cur.y + (first ? (c.compact ? 7 : 12) : 2);
-    float x = l.own ? cur.x + c.width - bw - 8 : cur.x + left;
-    ImVec2 p0(x, top), p1(x + bw, top + bh);
+    float top = cur.y + (first ? c.group_gap() : 2);
+    float bx = own ? c.x + c.width - bw : c.x + avatar + gap;
+    ImVec2 a(std::round(bx), std::round(top)), b(a.x + bw, a.y + bh);
 
-    // Bubble colors
-    ImVec4 fill = l.own ? c.p.own_bubble : c.p.other_bubble;
-    ImVec4 fg = l.own ? c.p.own_text : c.p.other_text;
-    if (dm && l.own) {
+    ImVec4 fill = own ? c.p.own_bubble : c.p.other_bubble;
+    ImVec4 fg = own ? c.p.own_text : c.p.other_text;
+    if (dm && own) { // .msg-row.own .bubble.dm
         fill = c.p.dm;
         fg = ImVec4(1, 1, 1, 1);
-        label_color = fg;
     }
 
-    ImDrawFlags corners = ImDrawFlags_RoundCornersAll;
+    // First bubble of a group: a 4px corner toward the sender plus a tail.
+    const float r = c.radius();
     bool tail = first && !dm;
-    if (tail) corners = l.own ? (ImDrawFlags_RoundCornersAll & ~ImDrawFlags_RoundCornersTopRight)
-                              : (ImDrawFlags_RoundCornersAll & ~ImDrawFlags_RoundCornersTopLeft);
+    float tl = r, tr = r;
+    if (first && !own) tl = 4;
+    if (first && own) tr = 4;
 
-    c.dl->AddRectFilled(ImVec2(p0.x, p0.y + 1.5f), ImVec2(p1.x, p1.y + 1.5f), col(ImVec4(0, 0, 0, 1), 0.12f * alpha),
-                        radius, corners); // soft shadow
-    c.dl->AddRectFilled(p0, p1, col(fill, alpha), radius, corners);
+    // box-shadow: 0 1px 1.5px rgba(0, 0, 0, 0.15)
+    ui::shadow(c.dl, a, b, r, 1, 1.5f, 0.15f * alpha);
+    ui::rounded_rect(c.dl, a, b, col(fill, alpha), tl, tr, r, r);
     if (tail) {
-        if (l.own)
-            c.dl->AddTriangleFilled(ImVec2(p1.x, p0.y), ImVec2(p1.x + 7, p0.y), ImVec2(p1.x, p0.y + 11), col(fill, alpha));
+        if (own)
+            c.dl->AddTriangleFilled(ImVec2(b.x - 4, a.y), ImVec2(b.x + 6, a.y), ImVec2(b.x - 4, a.y + 12),
+                                    col(fill, alpha));
         else
-            c.dl->AddTriangleFilled(ImVec2(p0.x, p0.y), ImVec2(p0.x - 7, p0.y), ImVec2(p0.x, p0.y + 11), col(fill, alpha));
+            c.dl->AddTriangleFilled(ImVec2(a.x + 4, a.y), ImVec2(a.x - 6, a.y), ImVec2(a.x + 4, a.y + 12),
+                                    col(fill, alpha));
     }
-    if (dm && !l.own) c.dl->AddRect(p0, p1, col(c.p.dm, alpha), radius, 0, 2.0f);
+    if (dm && !own) // outline: 2px solid var(--dm); outline-offset: -2px
+        c.dl->AddRect(ImVec2(a.x + 1, a.y + 1), ImVec2(b.x - 1, b.y - 1), col(c.p.dm, alpha), r - 1, 0, 2.0f);
 
-    // Content
-    float tx = p0.x + pad_x, ty = p0.y + pad_y;
-    if (!label.empty()) {
-        ImU32 lc = dm ? col(label_color, alpha) : (name_color(l.name, c.p.dark ? 0.62f : 0.42f) & 0x00FFFFFF) |
-                   (static_cast<ImU32>(255 * alpha) << IM_COL32_A_SHIFT);
-        c.dl->AddText(c.font, c.small * 1.05f, ImVec2(tx, ty), lc, label.c_str(), nullptr, max_inner);
+    float tx = a.x + px, ty = a.y + py;
+    if (show_name) {
+        ui::text(c.dl, ImVec2(tx, ty), name_f, ui::name_color(l.name, alpha), l.name);
+        ty += label_h;
+    } else if (dm) {
+        ui::text(c.dl, ImVec2(tx, ty), dm_f, col(fg, 0.9f * alpha), label);
         ty += label_h;
     }
-    c.dl->AddText(c.font, c.fs, ImVec2(tx, ty), col(fg, alpha), l.text.c_str(), nullptr, max_inner);
-    ImVec2 time_pos = inline_time
-        ? ImVec2(p1.x - pad_x - time_sz.x, ty + (text_sz.y - time_sz.y))
-        : ImVec2(p1.x - pad_x - time_sz.x, ty + text_sz.y + 2);
-    c.dl->AddText(c.font, c.small, time_pos, col(fg, 0.7f * alpha), time.c_str());
+    for (auto& ln : lines) {
+        ui::text(c.dl, ImVec2(tx, ty), body, col(fg, alpha), ln.text);
+        ty += body.line();
+    }
+    // .bubble-time: float right, margin-top 6px, line-height 1, opacity .7
+    float time_top = (time_inline ? ty - body.line() : ty) + 6;
+    ui::text(c.dl, ImVec2(a.x + px + inner_w - time_w, time_top), time_f, col(fg, 0.7f * alpha), time);
 
-    if (first && !l.own) draw_avatar(c.dl, ImVec2(cur.x + avatar_r, top + avatar_r), avatar_r, l.name);
+    if (first && !own) ui::avatar(c.dl, ImVec2(c.x, a.y), avatar, l.name, alpha);
 
-    ImGui::Dummy(ImVec2(c.width, (p1.y - cur.y) + 0.5f));
+    advance(b.y - cur.y);
 }
 
 bool same_lane(const ChatLine& a, const ChatLine& b) {
@@ -206,26 +205,27 @@ bool same_lane(const ChatLine& a, const ChatLine& b) {
 
 } // namespace
 
-void draw_chat_view(const std::vector<ChatLine>& lines, const Palette& p, bool compact) {
-    Ctx c{ ImGui::GetWindowDrawList(), ImGui::GetFont(), ImGui::GetFontSize(), ImGui::GetFontSize() * 0.8f,
-           ImGui::GetContentRegionAvail().x, p, compact };
+void draw_chat_view(const std::vector<ChatLine>& lines, const Palette& p, bool compact, bool narrow) {
+    ImVec2 start = ImGui::GetCursorScreenPos();
+    Ctx c{ ImGui::GetWindowDrawList(), p, start.x, ImGui::GetContentRegionAvail().x, compact, narrow };
 
+    advance(12); // .messages-box padding-top
     int last_day = -1;
     const ChatLine* prev = nullptr; // previous bubble, if the previous item was one
     for (const ChatLine& l : lines) {
         int day = day_number(l.timestamp);
         if (day != last_day) {
-            pill(c, day_label(l.timestamp), p.muted, 10);
+            pill(c, day_label(l.timestamp), p.muted, true);
             last_day = day;
             prev = nullptr;
         }
         switch (l.kind) {
             case ChatLine::System:
-                pill(c, l.text, p.muted, 4);
+                pill(c, l.text, p.muted, false);
                 prev = nullptr;
                 break;
             case ChatLine::Error:
-                pill(c, l.text, p.danger, 4);
+                pill(c, l.text, p.danger, false);
                 prev = nullptr;
                 break;
             case ChatLine::Chat:
@@ -237,5 +237,6 @@ void draw_chat_view(const std::vector<ChatLine>& lines, const Palette& p, bool c
             }
         }
     }
-    ImGui::Dummy(ImVec2(c.width, 6));
+    advance(8); // padding-bottom
+    ImGui::Dummy(ImVec2(c.width, 0));
 }

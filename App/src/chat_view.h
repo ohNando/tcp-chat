@@ -1,5 +1,6 @@
-// Messaging-app style chat rendering with ImDrawList: bubbles with tails,
-// avatars, grouping and day separators. Mirrors Web/src/chat/groupMessages.js.
+// The message list, drawn the way the web client's MessageList renders it
+// (Web/src/App.jsx, App.css): bubbles with tails, avatars, grouping and day
+// separators, with the same CSS sizes.
 #pragma once
 
 #include <string>
@@ -8,12 +9,11 @@
 #include "chat_client.h"
 #include "theme.h"
 
-// Draws the chat lines into the current window (call inside a child) and
-// advances the cursor past them.
-void draw_chat_view(const std::vector<ChatLine>& lines, const Palette& p, bool compact);
+// Draws the lines into the current (scrolling) window, starting at the
+// cursor and using the available width.
+void draw_chat_view(const std::vector<ChatLine>& lines, const Palette& p, bool compact, bool narrow);
 
-// Round avatar with the name's first letter, in a color derived from the name.
-void draw_avatar(ImDrawList* dl, ImVec2 center, float radius, const std::string& name);
-
-// A name's stable color (same hash as the web client).
-ImU32 name_color(const std::string& name, float lightness = 0.62f);
+// "05:15 PM" or "17:15", following the system locale like the browser's
+// toLocaleTimeString(); "Today", "Yesterday" or a date for separators.
+std::string clock_text(uint64_t ms);
+std::string day_label(uint64_t ms);

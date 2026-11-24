@@ -1,9 +1,11 @@
-// Chat backgrounds for the desktop app: the same built-in patterns as
-// Web/src/theme/wallpapers.js, or an image file chosen by the user.
+// Chat backgrounds, rendered to match Web/src/theme/wallpapers.js: the SVG
+// patterns are rasterized into tiles, the CSS gradients are computed with the
+// same formulas, and blur/dim work like the web's filter and dim layer.
 #pragma once
 
 #include <map>
 #include <string>
+#include <vector>
 
 #include "settings.h"
 #include "theme.h"
@@ -24,9 +26,6 @@ public:
     Texture& operator=(const Texture&) = delete;
     ~Texture() { reset(); }
 
-    // Decodes an image file (JPEG, PNG, BMP, GIF). On failure keeps the
-    // old texture and sets *error.
-    bool loadFile(const std::string& path, std::string* error);
     void loadPixels(const unsigned char* rgba, int w, int h);
     void reset();
 
@@ -42,29 +41,28 @@ private:
 
 class WallpaperRenderer {
 public:
-    // Fills the rectangle with the selected background and the dim layer.
-    // Returns false (draws nothing) for "none".
-    bool draw(ImDrawList* dl, ImVec2 p0, ImVec2 p1, const Settings& s, const Palette& p);
+    // Fills [p0, p1] with the background in s.wallpaper; with `effects`
+    // also applies s.blur and the s.dim layer (off for settings swatches).
+    // Returns false (draws nothing) for "none" or a missing image.
+    bool draw(ImDrawList* dl, ImVec2 p0, ImVec2 p1, const Settings& s, const Palette& p, bool effects = true,
+              float rounding = 0);
 
-    // Loads s.wallpaper_path if it changed since the last call.
-    // Returns the error text of a failed load, or "".
+    // Loads s.wallpaper_path if it changed. Returns the error text of a
+    // failed load, or "".
     const std::string& syncCustom(const Settings& s);
+    bool hasCustom() const { return !image_.empty(); }
 
 private:
-    void drawPattern(ImDrawList* dl, ImVec2 p0, ImVec2 p1, const std::string& id, const Palette& p);
-    void drawGradient(ImDrawList* dl, ImVec2 p0, ImVec2 p1, const std::string& id, const Palette& p);
+    Texture& cached(const std::string& key);
 
-    Texture custom_;
-    std::string custom_path_;     // path custom_ was loaded from
+    std::string custom_path_;
     std::string custom_error_;
+    std::vector<unsigned char> image_; // decoded custom image, RGBA
+    int image_w_ = 0, image_h_ = 0;
 
-    struct Gradient {
-        Texture tex;
-        std::string key;          // colors the texture was made with
-    };
-    std::map<std::string, Gradient> gradients_;   // by wallpaper id
+    std::map<std::string, Texture> cache_;   // tiles, gradients, blurred images
 };
 
 // Asks for an image file with the desktop's file dialog (zenity or
-// kdialog). Returns "" when cancelled or no dialog tool is installed.
-std::string pick_image_file();
+// kdialog). Returns "" when cancelled; sets *no_dialog when neither exists.
+std::string pick_image_file(bool* no_dialog);
