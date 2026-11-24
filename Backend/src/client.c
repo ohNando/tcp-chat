@@ -1,4 +1,6 @@
 #include "client.h"
+#include "config.h"
+#include "dm.h"
 #include "framer.h"
 #include "known_servers.h"
 #include "message.h"
@@ -29,6 +31,15 @@ static int stdin_eof = 0;
 
 static char my_name[NAME_MAX_LEN + 1];
 static int use_color = 0;
+static char hostport[300];
+
+/* Private messages: our long-term key and the keys the server announced. */
+static user_key_t my_key;
+static struct {
+    char name[NAME_MAX_LEN + 1];
+    uint8_t pk[DM_KEY_BYTES];
+} peers[USERS_MAX];
+static size_t npeers;
 
 /* ANSI colors, only used when stdout is a terminal. */
 #define C_RESET  (use_color ? "\033[0m"  : "")
@@ -37,6 +48,7 @@ static int use_color = 0;
 #define C_OTHER  (use_color ? "\033[1;36m" : "")
 #define C_INFO   (use_color ? "\033[33m" : "")
 #define C_ERROR  (use_color ? "\033[1;31m" : "")
+#define C_DM     (use_color ? "\033[1;35m" : "")
 
 /* ---------------------------------------------------------------- */
 /* Output                                                            */
@@ -160,15 +172,134 @@ static int send_message(const message_t* m) {
     return send_message_ex(m, 0);
 }
 
+/* ---------------------------------------------------------------- */
+/* Private messages                                                  */
+/* ---------------------------------------------------------------- */
+
+static const uint8_t* peer_key(const char* name) {
+    for (size_t i = 0; i < npeers; i++)
+        if (name_equal(peers[i].name, name)) return peers[i].pk;
+    return NULL;
+}
+
+static void forget_peer(const char* name) {
+    for (size_t i = 0; i < npeers; i++)
+        if (name_equal(peers[i].name, name)) {
+            peers[i] = peers[--npeers];
+            return;
+        }
+}
+
+/* Remembers a member's key. Keys are pinned per server and name in
+ * known_peers; a different key for the same name gets a loud warning. */
+static void on_peer_key(const message_t* m) {
+    char path[CONFIG_PATH_MAX], who[sizeof(hostport) + NAME_MAX_LEN + 2];
+    uint8_t pinned[DM_KEY_BYTES];
+    snprintf(who, sizeof(who), "%s/%s", hostport, m->name);
+
+    if (config_path("known_peers", "TCPCHAT_KNOWN_PEERS", path, sizeof(path)) == 0) {
+        int found = known_servers_lookup(path, who, pinned);
+        if (found == 0) {
+            known_servers_add(path, who, m->key);
+        } else if (found == 1 && sodium_memcmp(pinned, m->key, DM_KEY_BYTES) != 0) {
+            char safety[DM_SAFETY_STR_LEN];
+            dm_safety_number(my_key.pk, m->key, safety);
+            show("%s! The private-message key of %s has CHANGED.\n"
+                 "! They may have a new device, or the server is intercepting.\n"
+                 "! Compare the new safety number with them: %s%s",
+                 C_ERROR, m->name, safety, C_RESET);
+            known_servers_add(path, who, m->key); /* last entry wins */
+        }
+    }
+
+    forget_peer(m->name);
+    if (npeers < USERS_MAX) {
+        snprintf(peers[npeers].name, sizeof(peers[npeers].name), "%s", m->name);
+        memcpy(peers[npeers].pk, m->key, DM_KEY_BYTES);
+        npeers++;
+    }
+}
+
+static void on_dm(const message_t* m) {
+    /* Our own echo is "to" someone else; their key opens it too. */
+    const char* other = name_equal(m->name, my_name) ? m->to : m->name;
+    const uint8_t* pk = peer_key(other);
+    uint64_t sent_at;
+    static char text[TEXT_MAX_LEN + 1];
+
+    if (!pk || dm_open(&my_key, pk, m->nonce, m->box, m->box_len, &sent_at, text) < 0) {
+        show("%s! Could not decrypt a private message from %s.%s", C_ERROR, m->name, C_RESET);
+        return;
+    }
+    sanitize(text);
+    char stamp[8];
+    time_t t = (time_t)(m->timestamp / 1000);
+    struct tm tm;
+    localtime_r(&t, &tm);
+    strftime(stamp, sizeof(stamp), "%H:%M", &tm);
+    show("%s[%s] [private] %s -> %s: %s%s", C_DM, stamp, m->name, m->to, text, C_RESET);
+}
+
+/* /msg name text */
+static int send_dm(const char* args) {
+    static message_t m;
+    char to[NAME_MAX_LEN + 1];
+    const char* sp = strchr(args, ' ');
+    size_t n = sp ? (size_t)(sp - args) : strlen(args);
+    if (!sp || n == 0 || n > NAME_MAX_LEN || !sp[1]) {
+        show("! Usage: /msg <name> <text>");
+        return 0;
+    }
+    memcpy(to, args, n);
+    to[n] = '\0';
+
+    const uint8_t* pk = peer_key(to);
+    if (!pk) {
+        show("! No key for %s: not online, or their client has no private messages.", to);
+        return 0;
+    }
+    message_init(&m, FT_DM);
+    snprintf(m.to, sizeof(m.to), "%s", to);
+    if (dm_seal(&my_key, pk, (uint64_t)time(NULL) * 1000u, sp + 1, m.nonce, m.box, &m.box_len) < 0) {
+        show("! Message is empty, too long or has control characters.");
+        return 0;
+    }
+    return send_message(&m);
+}
+
+/* /safety name */
+static void show_safety(const char* name) {
+    const uint8_t* pk = peer_key(name);
+    if (!pk) {
+        show("! No key for %s.", name);
+        return;
+    }
+    char safety[DM_SAFETY_STR_LEN];
+    dm_safety_number(my_key.pk, pk, safety);
+    show("%s* Safety number with %s: %s\n* It must be the same on their screen.%s",
+         C_INFO, name, safety, C_RESET);
+}
+
 static void handle_server_message(message_t* m) {
     sanitize(m->name);
     sanitize(m->text);
     for (uint16_t i = 0; i < m->user_count; i++) sanitize(m->users[i]);
 
     switch (m->type) {
-        case FT_WELCOME:
+        case FT_WELCOME: {
             state = CLIENT_CHATTING;
             show("%s* %s%s", C_INFO, m->text, C_RESET);
+            static message_t key;
+            message_init(&key, FT_KEY);
+            memcpy(key.key, my_key.pk, DM_KEY_BYTES);
+            send_message(&key);
+            break;
+        }
+        case FT_PEER_KEY:
+            on_peer_key(m);
+            break;
+        case FT_DM_RECV:
+            on_dm(m);
             break;
         case FT_CHAT: {
             char stamp[8];
@@ -188,6 +319,7 @@ static void handle_server_message(message_t* m) {
             show("%s* %s joined the chat%s", C_INFO, m->name, C_RESET);
             break;
         case FT_LEAVE:
+            forget_peer(m->name);
             show("%s* %s left the chat%s", C_INFO, m->name, C_RESET);
             break;
         case FT_USERS: {
@@ -301,10 +433,17 @@ static int handle_line(const char* line) {
             message_init(&m, FT_USERS_REQ);
             return send_message(&m);
         }
+        if (strncmp(line, "/msg ", 5) == 0) return send_dm(line + 5);
+        if (strncmp(line, "/safety ", 8) == 0) {
+            show_safety(line + 8);
+            return 0;
+        }
         if (strcmp(line, "/help") == 0) {
-            show("* Commands: /users  list online users\n"
-                 "*           /quit   leave the chat\n"
-                 "*           /help   show this help");
+            show("* Commands: /users               list online users\n"
+                 "*           /msg <name> <text>   end-to-end encrypted private message\n"
+                 "*           /safety <name>       safety number to compare with <name>\n"
+                 "*           /quit                leave the chat\n"
+                 "*           /help                show this help");
             return 0;
         }
         show("! Unknown command '%s'. Type /help.", line);
@@ -381,8 +520,16 @@ int main(int argc, char** argv) {
     sockfd = connectToServer(host, port);
     if (sockfd < 0) return 1;
     if (framer_init(&in, RECORD_MAX_BODY) < 0) return 1;
-    static char hostport[300];
     snprintf(hostport, sizeof(hostport), "%s:%d", host, port);
+
+    char key_path[CONFIG_PATH_MAX];
+    int created = 0;
+    if (user_key_path(key_path, sizeof(key_path)) < 0 ||
+        user_key_load_or_create(&my_key, key_path, &created) < 0) {
+        fprintf(stderr, "(-)| Cannot load or create the private-message key.\n");
+        return 1;
+    }
+    if (created) printf("(+)| Created your private-message key in %s\n", key_path);
     if (secure_client_init(&sec, verify_server, emit_record, hostport) < 0) {
         fprintf(stderr, "(-)| Cannot start handshake.\n");
         return 1;
@@ -418,6 +565,7 @@ int main(int argc, char** argv) {
     printf("\n");
     framer_free(&in);
     secure_wipe(&sec);
+    user_key_wipe(&my_key);
     close(sockfd);
     return 0;
 }
