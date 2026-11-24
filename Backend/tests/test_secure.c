@@ -46,7 +46,7 @@ static int verify_pin(void* ctx, const unsigned char pk[HS_ID_PK_BYTES]) {
 
 /* Delivers queued records both ways until quiet. Returns -1 on error. */
 static int pump(void) {
-    uint8_t* rec; size_t len, n;
+    uint8_t* rec = NULL; size_t len = 0, n = 0;
     int progress = 1;
     while (progress) {
         progress = 0;
@@ -81,7 +81,7 @@ TEST(handshake_establishes_both_sides) {
 }
 
 TEST(data_flows_both_ways) {
-    uint8_t* rec; size_t len, n;
+    uint8_t* rec = NULL; size_t len = 0, n = 0;
     reset();
     pump();
 
@@ -105,7 +105,7 @@ TEST(no_data_before_handshake) {
 }
 
 TEST(tampered_record_is_rejected) {
-    uint8_t* rec; size_t len, n;
+    uint8_t* rec = NULL; size_t len = 0, n = 0;
     reset();
     pump();
     secure_send(&cli, (const uint8_t*)"transfer 10 TL", 14, 0);
@@ -116,7 +116,7 @@ TEST(tampered_record_is_rejected) {
 }
 
 TEST(replayed_record_is_rejected) {
-    uint8_t* rec; size_t len, n;
+    uint8_t* rec = NULL; size_t len = 0, n = 0;
     uint8_t copy[RECORD_MAX_BODY];
     reset();
     pump();
@@ -129,7 +129,7 @@ TEST(replayed_record_is_rejected) {
 }
 
 TEST(reordered_records_are_rejected) {
-    uint8_t *a, *b; size_t alen, blen, n;
+    uint8_t *a = NULL, *b = NULL; size_t alen = 0, blen = 0, n = 0;
     uint8_t first[RECORD_MAX_BODY];
     reset();
     pump();
@@ -143,7 +143,7 @@ TEST(reordered_records_are_rejected) {
 }
 
 TEST(final_record_ends_stream) {
-    uint8_t* rec; size_t len, n;
+    uint8_t* rec = NULL; size_t len = 0, n = 0;
     reset();
     pump();
     CHECK_EQ_INT(secure_send(&cli, (const uint8_t*)"bye", 3, 1), 0);
@@ -155,7 +155,7 @@ TEST(final_record_ends_stream) {
 }
 
 TEST(invalid_signature_is_rejected) {
-    uint8_t* rec; size_t len, n;
+    uint8_t* rec = NULL; size_t len = 0, n = 0;
     reset();
     pop(&to_server, &rec, &len);
     secure_recv(&srv, rec, len, out, sizeof(out), &n);   /* server answers */
@@ -167,7 +167,7 @@ TEST(invalid_signature_is_rejected) {
 }
 
 TEST(swapped_ephemeral_key_is_rejected) {
-    uint8_t* rec; size_t len, n;
+    uint8_t* rec = NULL; size_t len = 0, n = 0;
     reset();
     pop(&to_server, &rec, &len);
     secure_recv(&srv, rec, len, out, sizeof(out), &n);
