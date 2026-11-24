@@ -258,7 +258,7 @@ void ChatClient::acceptPendingKey() {
         fail("Cannot write " + known_path_);
         return;
     }
-    addLine(ChatLine::System, "Server key saved: " + server_fp_);
+    addLine(ChatLine::System, "New server, fingerprint saved: " + server_fp_);
     connect(host_, port_, name_);
 }
 
