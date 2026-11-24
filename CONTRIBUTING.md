@@ -4,6 +4,12 @@ Thanks for your interest! This is a learning project, so clear code and
 explanations matter as much as features. Small, focused pull requests are
 easiest to review.
 
+## What to work on
+
+[docs/ROADMAP.md](docs/ROADMAP.md) lists open work and ideas. For anything
+bigger than a small fix, open an issue first so we can agree on the approach
+before you write code.
+
 ## Setup
 
 See the README in each folder for dependencies:
@@ -40,6 +46,8 @@ cd App && cmake -S . -B build && cmake --build build -j
 ## Branches and commits
 
 - Work on a branch off `develop`; pull requests target `develop`.
+- Every pull request needs CI to pass and a review from the maintainer
+  before it is merged; only the maintainer merges.
 - One logical change per commit, message as a single sentence with a
   conventional prefix:
 

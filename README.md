@@ -86,7 +86,7 @@ cd App && cmake -S . -B build && cmake --build build -j
 | [`Backend/`](Backend) | C server, terminal client, shared protocol and crypto modules, unit tests |
 | [`Web/`](Web) | React + Vite client, JavaScript protocol implementation, end-to-end test |
 | [`App/`](App) | C++ Dear ImGui desktop client |
-| [`docs/`](docs) | protocol and architecture documentation |
+| [`docs/`](docs) | protocol, architecture, performance notes and the roadmap |
 
 ## Security
 
@@ -118,7 +118,8 @@ behind libraries.
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md).
+Ideas and open work are listed in [docs/ROADMAP.md](docs/ROADMAP.md); help is
+welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for how to send changes.
 
 ## License
 
