@@ -4,7 +4,8 @@ import { DEFAULT_DARK, DEFAULT_LIGHT, THEMES, resolveTheme, themeVars } from './
 
 const STORAGE_KEY = 'tcpchat.settings'
 
-function systemTheme() {
+/** Theme used when the user picked "Match system". */
+export function systemTheme() {
   return window.matchMedia?.('(prefers-color-scheme: light)').matches ? DEFAULT_LIGHT : DEFAULT_DARK
 }
 

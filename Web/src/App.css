@@ -114,6 +114,12 @@ input[type='text']:focus {
 
 /* ---------- login ---------- */
 
+.login-corner {
+  position: fixed;
+  top: 12px;
+  right: 12px;
+}
+
 .login-screen {
   display: flex;
   flex-direction: column;

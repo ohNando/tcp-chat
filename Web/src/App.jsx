@@ -4,6 +4,7 @@ import { Status, useChat } from './hooks/useChat'
 import { useSettings } from './theme/useSettings'
 import { groupMessages } from './chat/groupMessages'
 import Avatar from './components/Avatar'
+import SettingsPanel from './components/SettingsPanel'
 import { nameColor } from './chat/names'
 import { NAME_MAX_LEN, TEXT_MAX_LEN } from './protocol/frame'
 import './App.css'
@@ -50,7 +51,14 @@ function SecurityWarning({ expected, received, onTrust }) {
   )
 }
 
-function LoginScreen({ status, error, fingerprint, onLogin }) {
+function SettingsButton({ onClick }) {
+  return (
+    <button type="button" className="icon settings-button" onClick={onClick}
+            aria-label="Settings" title="Settings">⚙️</button>
+  )
+}
+
+function LoginScreen({ status, error, fingerprint, onLogin, onOpenSettings }) {
   const [name, setName] = useState('')
   const canJoin = status === Status.READY && name.trim().length >= 2
 
@@ -61,6 +69,7 @@ function LoginScreen({ status, error, fingerprint, onLogin }) {
 
   return (
     <form className="login-screen" onSubmit={submit}>
+      <div className="login-corner"><SettingsButton onClick={onOpenSettings} /></div>
       <h2>TCP Chat</h2>
       <p className={`status status-${status}`}>{STATUS_TEXT[status]}</p>
       <input
@@ -161,7 +170,7 @@ function typingText(names) {
 }
 
 function ChatScreen({ status, me, messages, users, typing, keyedPeers, error, reconnectIn,
-                      onSend, onSendDm, safetyWith, onTyping, onDismissError }) {
+                      onSend, onSendDm, safetyWith, onTyping, onDismissError, onOpenSettings }) {
   const [input, setInput] = useState('')
   const [dmTarget, setDmTarget] = useState(null)
   const endRef = useRef(null)
@@ -194,6 +203,7 @@ function ChatScreen({ status, me, messages, users, typing, keyedPeers, error, re
                 ` · retrying in ${Math.ceil(reconnectIn / 1000)}s`}
             </p>
           </div>
+          <SettingsButton onClick={onOpenSettings} />
         </header>
 
         {error && (
@@ -238,7 +248,13 @@ function ChatScreen({ status, me, messages, users, typing, keyedPeers, error, re
 
 export default function App() {
   const chat = useChat()
-  useSettings() // applies the saved theme
+  const look = useSettings() // also applies the saved theme
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const openSettings = () => setSettingsOpen(true)
+  const panel = settingsOpen && (
+    <SettingsPanel settings={look.settings} update={look.update} palette={look.palette}
+                   onClose={() => setSettingsOpen(false)} />
+  )
 
   if (chat.status === Status.UNTRUSTED) {
     return (
@@ -250,14 +266,19 @@ export default function App() {
   // Stay on the chat screen while a dropped connection is being restored.
   const inRoom = Boolean(chat.me) && chat.status !== Status.READY
 
-  return inRoom ? (
-    <ChatScreen status={chat.status} me={chat.me} messages={chat.messages} users={chat.users}
-                typing={chat.typing} keyedPeers={chat.keyedPeers} error={chat.error}
-                reconnectIn={chat.reconnectIn} onSend={chat.sendText} onSendDm={chat.sendDm}
-                safetyWith={chat.safetyWith} onTyping={chat.notifyTyping}
-                onDismissError={chat.clearError} />
-  ) : (
-    <LoginScreen status={chat.status} error={chat.error} fingerprint={chat.serverFingerprint}
-                 onLogin={chat.login} />
+  return (
+    <>
+      {inRoom ? (
+        <ChatScreen status={chat.status} me={chat.me} messages={chat.messages} users={chat.users}
+                    typing={chat.typing} keyedPeers={chat.keyedPeers} error={chat.error}
+                    reconnectIn={chat.reconnectIn} onSend={chat.sendText} onSendDm={chat.sendDm}
+                    safetyWith={chat.safetyWith} onTyping={chat.notifyTyping}
+                    onDismissError={chat.clearError} onOpenSettings={openSettings} />
+      ) : (
+        <LoginScreen status={chat.status} error={chat.error} fingerprint={chat.serverFingerprint}
+                     onLogin={chat.login} onOpenSettings={openSettings} />
+      )}
+      {panel}
+    </>
   )
 }
