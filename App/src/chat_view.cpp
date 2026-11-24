@@ -132,7 +132,7 @@ void bubble(Ctx& c, const ChatLine& l, bool first) {
     // private-message marker.
     std::string label;
     ImVec4 label_color = c.p.dm;
-    if (dm) label = l.own ? "Private to " + l.to : "Private from " + l.name;
+    if (dm) label = l.own ? "🔒 Private to " + l.to : "🔒 Private from " + l.name;
     else if (first && !l.own) label = l.name;
 
     ImVec2 text_sz = c.font->CalcTextSizeA(c.fs, FLT_MAX, max_inner, l.text.c_str());

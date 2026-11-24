@@ -48,6 +48,7 @@ private:
     void insertIntoInput(const char* text);
     void drawTyping();
     void drawDmBanner();
+    float dmBannerHeight() const;
     const char* dmTarget() const;
     void drawUsers(float height);
     void drawStatusBar();

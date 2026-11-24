@@ -294,7 +294,7 @@ void App::drawChatScreen() {
     drawStatusBar();
     const float users_w = 200.0f;
     const float input_h = ImGui::GetFrameHeightWithSpacing() + 6.0f;
-    const float typing_h = ImGui::GetTextLineHeightWithSpacing() * (dmTarget() ? 2.0f : 1.0f);
+    const float typing_h = ImGui::GetTextLineHeightWithSpacing() + dmBannerHeight();
     const float body_h = ImGui::GetContentRegionAvail().y - input_h - typing_h;
     const float spacing = ImGui::GetStyle().ItemSpacing.x;
 
@@ -349,16 +349,16 @@ void App::drawUsers(float height) {
             float w = ImGui::CalcTextSize(u.c_str()).x;
             dl->AddText(ImVec2(c.x + r + 14 + w, ty), to_u32(palette_.muted), "(you)");
         } else if (dm) {
-            ImVec2 ts = ImGui::CalcTextSize("DM");
+            ImVec2 ts = ImGui::CalcTextSize("🔒");
             float x = p0.x + ImGui::GetContentRegionAvail().x - ts.x - 6;
-            dl->AddText(ImVec2(x, ty), to_u32(palette_.dm), "DM");
+            dl->AddText(ImVec2(x, ty), to_u32(palette_.dm), "🔒");
         }
         ImGui::PopID();
     }
     if (any_dm) {
         ImGui::Spacing();
         ImGui::PushTextWrapPos(0.0f);
-        ImGui::TextDisabled("Click a name for an end-to-end encrypted private message.");
+        ImGui::TextDisabled("Click a 🔒 name for an end-to-end encrypted private message.");
         ImGui::PopTextWrapPos();
     }
     ImGui::EndChild();
@@ -404,15 +404,36 @@ const char* App::dmTarget() const {
     return !dm_target_.empty() && client_.canDm(dm_target_) ? dm_target_.c_str() : nullptr;
 }
 
+float App::dmBannerHeight() const {
+    return dmTarget() ? ImGui::GetFrameHeight() + 10 + ImGui::GetStyle().ItemSpacing.y : 0;
+}
+
 void App::drawDmBanner() {
     const char* to = dmTarget();
     if (!to) return;
-    ImGui::PushStyleColor(ImGuiCol_Text, palette_.dm);
-    ImGui::Text("Private message to %s (end-to-end encrypted)   safety number %s", to,
-                client_.safetyWith(to).c_str());
-    ImGui::PopStyleColor();
-    ImGui::SameLine();
-    if (ImGui::SmallButton("back to room")) dm_target_.clear();
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    ImVec2 p0 = ImGui::GetCursorScreenPos();
+    float h = ImGui::GetFrameHeight() + 10, w = ImGui::GetContentRegionAvail().x;
+    ImVec2 p1(p0.x + w, p0.y + h);
+    dl->AddRectFilled(p0, p1, to_u32(palette_.dm, 0.12f), 10);
+    dl->AddRect(p0, p1, to_u32(palette_.dm, 0.7f), 10, 0, 1.5f);
+
+    // Text: who, then the safety number to compare out of band.
+    float ty = p0.y + (h - ImGui::GetFontSize()) / 2;
+    std::string who = std::string("🔒 Private to ") + to + " · end-to-end encrypted";
+    dl->AddText(ImVec2(p0.x + 12, ty), to_u32(palette_.dm), who.c_str());
+    std::string safety = "safety number " + client_.safetyWith(to);
+    float small = ImGui::GetFontSize() * 0.8f;
+    float sx = p0.x + 12 + ImGui::CalcTextSize(who.c_str()).x + 14;
+    dl->AddText(ImGui::GetFont(), small, ImVec2(sx, p0.y + (h - small) / 2), to_u32(palette_.muted),
+                safety.c_str());
+
+    const char* back = "Back to room";
+    float bw = ImGui::CalcTextSize(back).x + 2 * ImGui::GetStyle().FramePadding.x;
+    ImGui::SetCursorScreenPos(ImVec2(p1.x - bw - 6, p0.y + 5));
+    if (ImGui::Button(back)) dm_target_.clear();
+    ImGui::SetCursorScreenPos(ImVec2(p0.x, p1.y));
+    ImGui::Dummy(ImVec2(w, 0));
 }
 
 void App::drawTyping() {
