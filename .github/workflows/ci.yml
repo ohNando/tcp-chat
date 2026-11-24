@@ -50,6 +50,8 @@ jobs:
       - run: npm run build
       - name: End-to-end test against the C server
         run: npm run e2e
+      - name: Browser smoke test (headless Firefox)
+        run: npm run ui
 
   desktop:
     name: Desktop app (build, smoke test)
