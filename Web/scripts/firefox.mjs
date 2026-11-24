@@ -68,6 +68,15 @@ export async function launchFirefox({ port = 9333 + Math.floor(Math.random() * 5
         el.dispatchEvent(new Event('input', { bubbles: true }))
         return true
       })()`),
+      // Puts local files into an <input type=file> (also hidden ones).
+      setFiles: async (selector, files) => {
+        const r = await send('script.evaluate', {
+          expression: `document.querySelector(${JSON.stringify(selector)})`,
+          target: { context }, awaitPromise: false,
+        })
+        if (r.result?.type !== 'node') throw new Error(`no element for ${selector}`)
+        await send('input.setFiles', { context, element: { sharedId: r.result.sharedId }, files })
+      },
       click: (selector) => page.eval(`(document.querySelector(${JSON.stringify(selector)}).click(), true)`),
       waitFor: async (expression, timeoutMs = 8000) => {
         const end = Date.now() + timeoutMs

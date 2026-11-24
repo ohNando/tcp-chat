@@ -3,6 +3,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { DEFAULT_DARK, DEFAULT_LIGHT, THEMES, resolveTheme, themeVars } from './themes.js'
 
 const STORAGE_KEY = 'tcpchat.settings'
+// The custom background lives apart from the settings: it is large.
+const WALLPAPER_KEY = 'tcpchat.wallpaper'
 
 /** Theme used when the user picked "Match system". */
 export function systemTheme() {
@@ -37,6 +39,7 @@ function load() {
  */
 export function useSettings() {
   const [settings, setSettings] = useState(load)
+  const [customWallpaper, setCustom] = useState(() => window.localStorage.getItem(WALLPAPER_KEY))
 
   const update = useCallback((patch) => {
     setSettings((s) => {
@@ -44,6 +47,14 @@ export function useSettings() {
       window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next))
       return next
     })
+  }, [])
+
+  /** Saves (or with null removes) the custom background image. Throws if
+   * the browser's storage is full. */
+  const setCustomWallpaper = useCallback((dataUrl) => {
+    if (dataUrl) window.localStorage.setItem(WALLPAPER_KEY, dataUrl)
+    else window.localStorage.removeItem(WALLPAPER_KEY)
+    setCustom(dataUrl)
   }, [])
 
   const themeId = settings.theme && THEMES[settings.theme] ? settings.theme : systemTheme()
@@ -60,5 +71,5 @@ export function useSettings() {
     root.dataset.compact = settings.compact ? 'true' : 'false'
   }, [palette, themeId, settings.fontSize, settings.compact])
 
-  return { settings, update, themeId, palette }
+  return { settings, update, themeId, palette, customWallpaper, setCustomWallpaper }
 }

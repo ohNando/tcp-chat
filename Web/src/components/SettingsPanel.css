@@ -151,6 +151,72 @@ button.link:disabled {
   background: transparent;
 }
 
+.wallpaper-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+}
+
+.wallpaper-swatch {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  padding: 4px;
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: var(--text);
+  background: transparent;
+  border: 2px solid transparent;
+  border-radius: 10px;
+}
+
+.wallpaper-swatch:hover:not(:disabled) {
+  background: var(--accent-soft);
+}
+
+.wallpaper-swatch.selected {
+  border-color: var(--accent);
+}
+
+.wallpaper-swatch .swatch {
+  display: block;
+  height: 48px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.wallpaper-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 12px 0 4px;
+}
+
+.wallpaper-actions button:not(.link) {
+  padding: 8px 14px;
+  font-size: 0.85rem;
+}
+
+.slider-row {
+  display: grid;
+  grid-template-columns: 60px 1fr 48px;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 0;
+}
+
+.slider-row input[type='range'] {
+  width: 100%;
+  accent-color: var(--accent);
+}
+
+.slider-row output {
+  font-size: 0.8rem;
+  color: var(--muted);
+  text-align: right;
+}
+
 @keyframes slide-in {
   from { transform: translateX(100%); }
   to { transform: none; }

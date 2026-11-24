@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 
 import { Status, useChat } from './hooks/useChat'
 import { useSettings } from './theme/useSettings'
+import { wallpaperCss } from './theme/wallpapers'
+import { alpha } from './theme/themes'
 import { groupMessages } from './chat/groupMessages'
 import Avatar from './components/Avatar'
 import SettingsPanel from './components/SettingsPanel'
@@ -143,6 +145,24 @@ function Bubble({ item }) {
   )
 }
 
+// The wallpaper and its dimming are separate layers behind the messages so
+// that blur applies to the picture only, never to the text.
+function ChatBackground({ look }) {
+  const { settings, palette, customWallpaper } = look
+  const background = wallpaperCss(settings.wallpaper, palette, customWallpaper)
+  if (!background) return null
+  return (
+    <>
+      <div className="wallpaper" style={{
+        background,
+        filter: settings.blur ? `blur(${settings.blur}px)` : undefined,
+        transform: settings.blur ? 'scale(1.08)' : undefined, // hide blurred edges
+      }} />
+      <div className="wallpaper-dim" style={{ background: alpha(palette.bg, settings.dim) }} />
+    </>
+  )
+}
+
 function MessageList({ messages, endRef }) {
   const items = groupMessages(messages)
   return (
@@ -170,7 +190,7 @@ function typingText(names) {
 }
 
 function ChatScreen({ status, me, messages, users, typing, keyedPeers, error, reconnectIn,
-                      onSend, onSendDm, safetyWith, onTyping, onDismissError, onOpenSettings }) {
+                      onSend, onSendDm, safetyWith, onTyping, onDismissError, onOpenSettings, look }) {
   const [input, setInput] = useState('')
   const [dmTarget, setDmTarget] = useState(null)
   const endRef = useRef(null)
@@ -213,8 +233,11 @@ function ChatScreen({ status, me, messages, users, typing, keyedPeers, error, re
           </div>
         )}
 
-        <MessageList messages={messages} endRef={endRef} />
-        <div className="typing" aria-live="polite">{typingText(typing)}</div>
+        <div className={`chat-area${look.settings.wallpaper !== 'none' ? ' has-wallpaper' : ''}`}>
+          <ChatBackground look={look} />
+          <MessageList messages={messages} endRef={endRef} />
+          <div className="typing" aria-live="polite">{typingText(typing)}</div>
+        </div>
 
         {target && (
           <div className="dm-banner">
@@ -253,6 +276,7 @@ export default function App() {
   const openSettings = () => setSettingsOpen(true)
   const panel = settingsOpen && (
     <SettingsPanel settings={look.settings} update={look.update} palette={look.palette}
+                   customWallpaper={look.customWallpaper} setCustomWallpaper={look.setCustomWallpaper}
                    onClose={() => setSettingsOpen(false)} />
   )
 
@@ -273,7 +297,7 @@ export default function App() {
                     typing={chat.typing} keyedPeers={chat.keyedPeers} error={chat.error}
                     reconnectIn={chat.reconnectIn} onSend={chat.sendText} onSendDm={chat.sendDm}
                     safetyWith={chat.safetyWith} onTyping={chat.notifyTyping}
-                    onDismissError={chat.clearError} onOpenSettings={openSettings} />
+                    onDismissError={chat.clearError} onOpenSettings={openSettings} look={look} />
       ) : (
         <LoginScreen status={chat.status} error={chat.error} fingerprint={chat.serverFingerprint}
                      onLogin={chat.login} onOpenSettings={openSettings} />

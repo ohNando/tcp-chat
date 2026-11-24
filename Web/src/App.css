@@ -246,6 +246,28 @@ input[type='text']:focus {
 
 /* ---------- messages ---------- */
 
+.chat-area {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.wallpaper,
+.wallpaper-dim {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.chat-area.has-wallpaper .messages-box,
+.chat-area.has-wallpaper .typing {
+  position: relative; /* above the wallpaper layers */
+  background: transparent;
+}
+
 .messages-box {
   flex: 1;
   overflow-y: auto;
