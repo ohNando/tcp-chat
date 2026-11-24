@@ -1,4 +1,5 @@
 #include "known_servers.h"
+#include "config.h"
 
 #include <errno.h>
 #include <fcntl.h>
@@ -11,17 +12,7 @@
 #define HEX_LEN (IDENTITY_PK_BYTES * 2)
 
 int known_servers_path(char* out, size_t cap) {
-    const char* env = getenv("TCPCHAT_KNOWN_SERVERS");
-    if (env && *env) {
-        return snprintf(out, cap, "%s", env) < (int)cap ? 0 : -1;
-    }
-    const char* xdg = getenv("XDG_CONFIG_HOME");
-    if (xdg && *xdg) {
-        return snprintf(out, cap, "%s/tcp-chat/known_servers", xdg) < (int)cap ? 0 : -1;
-    }
-    const char* home = getenv("HOME");
-    if (!home || !*home) return -1;
-    return snprintf(out, cap, "%s/.config/tcp-chat/known_servers", home) < (int)cap ? 0 : -1;
+    return config_path("known_servers", "TCPCHAT_KNOWN_SERVERS", out, cap);
 }
 
 int known_servers_lookup(const char* path, const char* hostport,
@@ -49,29 +40,10 @@ int known_servers_lookup(const char* path, const char* hostport,
     return found;
 }
 
-/* mkdir -p for the parent directory of `path`. */
-static int make_parent_dirs(const char* path) {
-    char dir[KNOWN_PATH_MAX];
-    if (snprintf(dir, sizeof(dir), "%s", path) >= (int)sizeof(dir)) return -1;
-
-    char* slash = strrchr(dir, '/');
-    if (!slash || slash == dir) return 0;
-    *slash = '\0';
-
-    for (char* p = dir + 1; *p; p++) {
-        if (*p != '/') continue;
-        *p = '\0';
-        if (mkdir(dir, 0700) < 0 && errno != EEXIST) return -1;
-        *p = '/';
-    }
-    if (mkdir(dir, 0700) < 0 && errno != EEXIST) return -1;
-    return 0;
-}
-
 int known_servers_add(const char* path, const char* hostport,
                       const unsigned char pk[IDENTITY_PK_BYTES]) {
     char hex[HEX_LEN + 1];
-    if (make_parent_dirs(path) < 0) return -1;
+    if (config_make_parent_dirs(path) < 0) return -1;
 
     int fd = open(path, O_WRONLY | O_CREAT | O_APPEND | O_CLOEXEC, 0600);
     if (fd < 0) return -1;
