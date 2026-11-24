@@ -464,6 +464,7 @@ static void accept_clients(const source_t* l) {
             return;
         }
 
+        net_set_nodelay(fd);
         conn_t* c = conn_create(fd, next_conn_id++, &addr, &identity, transport);
         if (!c) {
             close(fd);

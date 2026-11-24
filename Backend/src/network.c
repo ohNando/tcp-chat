@@ -1,6 +1,7 @@
 #include "network.h"
 
 #include <fcntl.h>
+#include <netinet/tcp.h>
 
 int connectToServer(const char* serverIP, int port){
     int new_sockfd;
@@ -36,6 +37,11 @@ int net_set_nonblocking(int fd){
     int flags = fcntl(fd, F_GETFL, 0);
     if(flags < 0) return -1;
     return fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+}
+
+int net_set_nodelay(int fd){
+    int one = 1;
+    return setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one));
 }
 
 int net_listen(int port, int backlog){
