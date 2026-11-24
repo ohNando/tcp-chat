@@ -39,6 +39,9 @@ typedef enum {
     FT_ERR       = 0x86,
 } frame_type_t;
 
+/* Frame flags (header byte 2). Unknown flags are ignored by receivers. */
+#define FLAG_HISTORY 0x01   /* CHAT replayed from history, not live */
+
 typedef struct {
     uint8_t version;
     uint8_t type;

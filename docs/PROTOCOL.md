@@ -113,10 +113,14 @@ server closes the connection after such a record.
 |---|---|
 | `ver` | frame format version, `1` |
 | `type` | message type, see below |
-| `flags` | reserved for future use, send `0` |
+| `flags` | bit field, see below; unknown bits are ignored |
 | `rsv` | must be `0` |
 | `seq` | per-sender counter, for debugging |
 | `len` | payload length, at most 65 536 |
+
+| Flag | Value | Meaning |
+|---|---|---|
+| `HISTORY` | `0x01` | a `CHAT` replayed from the server's recent history, not a live message |
 
 Decoding is strict: unknown types, a wrong version, a non-zero reserved byte,
 truncated payloads and trailing bytes are all rejected.

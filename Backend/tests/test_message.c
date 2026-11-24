@@ -138,10 +138,26 @@ TEST(encode_fails_when_buffer_too_small) {
     CHECK_EQ_INT(message_encode(&in, 0, small, sizeof(small)), -1);
 }
 
+TEST(flags_round_trip) {
+    message_init(&in, FT_CHAT);
+    in.flags = FLAG_HISTORY;
+    strcpy(in.name, "ali");
+    strcpy(in.text, "eski mesaj");
+    CHECK_EQ_INT(round_trip(), 0);
+    CHECK_EQ_INT(out.flags, FLAG_HISTORY);
+
+    message_init(&in, FT_CHAT);
+    strcpy(in.name, "ali");
+    strcpy(in.text, "yeni");
+    CHECK_EQ_INT(round_trip(), 0);
+    CHECK_EQ_INT(out.flags, 0);
+}
+
 int main(void) {
     RUN(name_round_trips);
     RUN(msg_and_welcome_round_trip);
     RUN(chat_round_trips);
+    RUN(flags_round_trip);
     RUN(join_and_leave_round_trip);
     RUN(users_round_trip);
     RUN(err_round_trips);

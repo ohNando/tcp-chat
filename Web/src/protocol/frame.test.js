@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
-import { FT, ERR, FRAME_HEADER_SIZE, encodeMessage, decodeMessage, ProtocolError } from './frame.js'
+import { FT, ERR, FLAG, FRAME_HEADER_SIZE, encodeMessage, decodeMessage, ProtocolError } from './frame.js'
 
 const roundTrip = (m) => decodeMessage(encodeMessage(m, 7))
 
@@ -53,4 +53,10 @@ test('length limits match the server', () => {
   assert.throws(() => encodeMessage({ type: FT.NAME, name: 'x'.repeat(25) }), ProtocolError)
   assert.doesNotThrow(() => encodeMessage({ type: FT.NAME, name: 'x'.repeat(24) }))
   assert.throws(() => encodeMessage({ type: FT.MSG, text: 'x'.repeat(2001) }), ProtocolError)
+})
+
+test('flags round-trip and default to zero', () => {
+  const h = roundTrip({ type: FT.CHAT, flags: FLAG.HISTORY, timestamp: 1, name: 'ali', text: 'eski' })
+  assert.equal(h.flags, FLAG.HISTORY)
+  assert.equal(roundTrip({ type: FT.CHAT, timestamp: 1, name: 'ali', text: 'yeni' }).flags, 0)
 })

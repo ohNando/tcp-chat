@@ -60,7 +60,7 @@ int message_encode(const message_t* m, uint32_t seq, uint8_t* out, size_t cap) {
     frame_header_t h = {
         .version = FRAME_VERSION,
         .type = m->type,
-        .flags = 0,
+        .flags = m->flags,
         .seq = seq,
         .len = (uint32_t)b.pos,
     };
@@ -108,6 +108,7 @@ int message_decode(const uint8_t* frame, size_t len, message_t* m, uint32_t* seq
     if (len - FRAME_HEADER_SIZE != h.len) return -1;
 
     message_init(m, h.type);
+    m->flags = h.flags;
     bytebuf_t b;
     bb_init_reader(&b, frame + FRAME_HEADER_SIZE, h.len);
     decode_payload(m, &b);

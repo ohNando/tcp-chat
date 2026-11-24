@@ -30,6 +30,11 @@ export const FT = Object.freeze({
   ERR: 0x86,
 })
 
+// Frame flags (header byte 2). Unknown flags are ignored.
+export const FLAG = Object.freeze({
+  HISTORY: 0x01, // CHAT replayed from history, not live
+})
+
 export const ERR = Object.freeze({
   PROTOCOL: 1,
   NAME_INVALID: 2,
@@ -194,7 +199,7 @@ export function encodeMessage(m, seq = 0) {
   const view = new DataView(out.buffer)
   view.setUint8(0, FRAME_VERSION)
   view.setUint8(1, m.type)
-  view.setUint8(2, 0) // flags
+  view.setUint8(2, m.flags ?? 0)
   view.setUint8(3, 0) // reserved
   view.setUint32(4, seq >>> 0)
   view.setUint32(8, payload.length)
@@ -208,6 +213,7 @@ export function decodeMessage(frame) {
   const view = new DataView(frame.buffer, frame.byteOffset, frame.byteLength)
   const version = view.getUint8(0)
   const type = view.getUint8(1)
+  const flags = view.getUint8(2)
   const reserved = view.getUint8(3)
   const seq = view.getUint32(4)
   const len = view.getUint32(8)
@@ -222,5 +228,6 @@ export function decodeMessage(frame) {
   const m = readPayload(r, type)
   if (r.remaining !== 0) throw new ProtocolError('trailing bytes')
   m.seq = seq
+  m.flags = flags
   return m
 }

@@ -40,6 +40,7 @@ typedef enum {
 
 typedef struct {
     uint8_t type;
+    uint8_t flags;                           /* FLAG_* from frame.h */
     uint64_t timestamp;                      /* CHAT */
     uint16_t code;                           /* ERR */
     char name[NAME_MAX_LEN + 1];             /* NAME, CHAT, JOIN, LEAVE */
