@@ -35,7 +35,12 @@ static ImVec4 state_color(ConnState s) {
     }
 }
 
-App::App(const AutoRun& autorun) : autorun_(autorun) {
+App::App(const AutoRun& autorun) : autorun_(autorun), settings_path_(settings_path()) {
+    settings_load(settings_, settings_path_);
+    std::snprintf(host_, sizeof(host_), "%s", settings_.host.c_str());
+    port_ = settings_.port;
+    std::snprintf(name_, sizeof(name_), "%s", settings_.name.c_str());
+
     if (autorun_.connect) {
         std::snprintf(host_, sizeof(host_), "%s", autorun_.host.c_str());
         port_ = autorun_.port;
@@ -44,7 +49,18 @@ App::App(const AutoRun& autorun) : autorun_(autorun) {
     }
 }
 
+void App::saveSettings() {
+    settings_save(settings_, settings_path_);
+}
+
 void App::startConnect() {
+    // Remember what the user typed for next time (not for scripted runs).
+    if (!autorun_.connect) {
+        settings_.host = host_;
+        settings_.port = port_;
+        settings_.name = name_;
+        saveSettings();
+    }
     client_.connect(host_, port_, name_);
 }
 

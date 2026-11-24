@@ -4,6 +4,7 @@
 #include <string>
 
 #include "chat_client.h"
+#include "settings.h"
 
 // Optional start-up actions from the command line (also used for automated
 // screenshots).
@@ -38,8 +39,12 @@ private:
     void drawIdentityWarning();
     void startConnect();
 
+    void saveSettings();
+
     ChatClient client_;
     AutoRun autorun_;
+    Settings settings_;
+    std::string settings_path_;
     bool said_ = false;
 
     // Set once we got into the room; while set, a dropped connection is
