@@ -14,9 +14,19 @@ export const Status = Object.freeze({
 })
 
 const MAX_MESSAGES = 500
+const TYPING_RESEND_MS = 2000 // refresh our own indicator at most this often
+const TYPING_SHOW_MS = 5000   // hide someone else's indicator after this
 const RECONNECT_MIN_MS = 1000
 const RECONNECT_MAX_MS = 15000
 let nextId = 1
+
+// Copy of `obj` without `key` (for the typing map).
+function without(obj, key) {
+  if (!(key in obj)) return obj
+  const copy = { ...obj }
+  delete copy[key]
+  return copy
+}
 
 function wsUrl() {
   const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
@@ -35,6 +45,7 @@ export function useChat() {
   const [error, setError] = useState(null)
   const [serverFingerprint, setServerFingerprint] = useState(null)
   const [reconnectIn, setReconnectIn] = useState(null)
+  const [typing, setTyping] = useState({}) // name -> expiry time (ms)
 
   const conn = useRef(null) // { ws, channel, seq }
   const meRef = useRef('')
@@ -42,6 +53,7 @@ export function useChat() {
   // not show them twice. Timestamps alone are not unique (two messages can
   // share a millisecond), hence the full key.
   const seenChats = useRef(new Set())
+  const typingSent = useRef({ active: false, at: 0 })
 
   const addMessage = useCallback((m) => {
     setMessages((prev) => [...prev.slice(-(MAX_MESSAGES - 1)), { id: nextId++, ...m }])
@@ -72,6 +84,7 @@ export function useChat() {
           const key = `${m.timestamp}|${m.name}|${m.text}`
           if (history && seenChats.current.has(key)) break
           seenChats.current.add(key)
+          if (!history) setTyping((t) => without(t, m.name))
           addMessage({ kind: 'chat', name: m.name, text: m.text, ts: m.timestamp,
                        own: m.name === meRef.current, history })
           break
@@ -82,10 +95,15 @@ export function useChat() {
           break
         case FT.LEAVE:
           setUsers((u) => u.filter((n) => n !== m.name))
+          setTyping((t) => without(t, m.name))
           addMessage({ kind: 'system', text: `${m.name} left the chat` })
           break
         case FT.USERS:
           setUsers(m.users)
+          break
+        case FT.USER_TYPING:
+          setTyping((t) =>
+            m.active ? { ...t, [m.name]: Date.now() + TYPING_SHOW_MS } : without(t, m.name))
           break
         case FT.PING: {
           // Heartbeat: the server drops connections that stay silent.
@@ -195,7 +213,39 @@ export function useChat() {
     send({ type: FT.NAME, name })
   }, [send])
 
-  const sendText = useCallback((text) => send({ type: FT.MSG, text }), [send])
+  // Forget indicators that were not refreshed in time (the sender may have
+  // closed the tab mid-sentence).
+  useEffect(() => {
+    const timer = setInterval(() => {
+      const now = Date.now()
+      setTyping((t) => {
+        const live = Object.entries(t).filter(([, expiry]) => expiry > now)
+        return live.length === Object.keys(t).length ? t : Object.fromEntries(live)
+      })
+    }, 1000)
+    return () => clearInterval(timer)
+  }, [])
+
+  /** Call on every input change: tells the others we are (still) typing. */
+  const notifyTyping = useCallback((text) => {
+    const sent = typingSent.current
+    const now = Date.now()
+    if (text.trim()) {
+      if (!sent.active || now - sent.at > TYPING_RESEND_MS) {
+        if (send({ type: FT.TYPING, active: true })) typingSent.current = { active: true, at: now }
+      }
+    } else if (sent.active) {
+      send({ type: FT.TYPING, active: false })
+      typingSent.current = { active: false, at: now }
+    }
+  }, [send])
+
+  const sendText = useCallback((text) => {
+    const ok = send({ type: FT.MSG, text })
+    // The message itself ends "typing" for the others; just reset our state.
+    if (ok) typingSent.current = { active: false, at: 0 }
+    return ok
+  }, [send])
 
   const clearError = useCallback(() => setError(null), [])
 
@@ -209,6 +259,7 @@ export function useChat() {
 
   return {
     status, messages, users, me, error, serverFingerprint, pinnedFingerprint: pinned,
-    reconnectIn, login, sendText, clearError, trustNewServerKey,
+    reconnectIn, typing: Object.keys(typing), login, sendText, notifyTyping, clearError,
+    trustNewServerKey,
   }
 }

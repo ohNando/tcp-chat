@@ -69,6 +69,26 @@ await step('a sent message comes back from the server', async () => {
   assert.equal(await ff.eval(`!!document.querySelector('.message b')`), false)
 })
 
+const textOf = (sel) => `(document.querySelector('${sel}')?.textContent ?? '')`
+let other
+await step('a second tab sees "is typing" while the first one types', async () => {
+  other = await ff.newPage()
+  await other.goto(`http://127.0.0.1:${WS_PORT}/`)
+  await other.waitFor(`${textOf('.status')}.includes('Secure connection')`)
+  await other.type('.login-screen input', 'Mehmet')
+  await other.click('.login-screen button')
+  await other.waitFor(`${textOf('.status')}.includes('Online')`)
+
+  await ff.type('.input-form input', 'yazıyorum')
+  await other.waitFor(`${textOf('.typing')}.includes('Ayşe is typing')`)
+})
+
+await step('the indicator disappears when the message is sent', async () => {
+  await ff.click('.input-form button')
+  await other.waitFor(`[...document.querySelectorAll('.message.other')].some(e => e.textContent.includes('yazıyorum'))`)
+  await other.waitFor(`!${textOf('.typing')}.includes('typing')`)
+})
+
 if (process.env.SCREENSHOT && !failed) await ff.screenshot(process.env.SCREENSHOT)
 
 await ff.close()

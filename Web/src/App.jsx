@@ -95,7 +95,15 @@ function UserList({ users, me }) {
   )
 }
 
-function ChatScreen({ status, me, messages, users, error, reconnectIn, onSend, onDismissError }) {
+function typingText(names) {
+  if (names.length === 0) return '\u00a0' // keep the line's height
+  if (names.length === 1) return `${names[0]} is typing…`
+  if (names.length === 2) return `${names[0]} and ${names[1]} are typing…`
+  return `${names.length} people are typing…`
+}
+
+function ChatScreen({ status, me, messages, users, typing, error, reconnectIn,
+                      onSend, onTyping, onDismissError }) {
   const [input, setInput] = useState('')
   const endRef = useRef(null)
 
@@ -144,13 +152,17 @@ function ChatScreen({ status, me, messages, users, error, reconnectIn, onSend, o
           )}
           <div ref={endRef} />
         </div>
+        <div className="typing" aria-live="polite">{typingText(typing)}</div>
 
         <form onSubmit={submit} className="input-form">
           <input
             type="text"
             value={input}
             maxLength={TEXT_MAX_LEN}
-            onChange={(e) => setInput(e.target.value)}
+            onChange={(e) => {
+              setInput(e.target.value)
+              onTyping(e.target.value)
+            }}
             placeholder="Type a message…"
             disabled={!online}
           />
@@ -177,8 +189,9 @@ export default function App() {
 
   return inRoom ? (
     <ChatScreen status={chat.status} me={chat.me} messages={chat.messages} users={chat.users}
-                error={chat.error} reconnectIn={chat.reconnectIn}
-                onSend={chat.sendText} onDismissError={chat.clearError} />
+                typing={chat.typing} error={chat.error} reconnectIn={chat.reconnectIn}
+                onSend={chat.sendText} onTyping={chat.notifyTyping}
+                onDismissError={chat.clearError} />
   ) : (
     <LoginScreen status={chat.status} error={chat.error} fingerprint={chat.serverFingerprint}
                  onLogin={chat.login} />

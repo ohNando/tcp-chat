@@ -46,48 +46,55 @@ export async function launchFirefox({ port = 9333 + Math.floor(Math.random() * 5
   })
 
   await send('session.new', { capabilities: {} })
-  const context = (await send('browsingContext.getTree', {})).contexts[0].context
 
-  const page = {
-    // navigate can occasionally hang on 'complete', so wait for 'interactive'
-    // and cap it; callers wait for the element they need anyway.
-    goto: (url) => Promise.race([
-      send('browsingContext.navigate', { context, url, wait: 'interactive' }),
-      sleep(5000),
-    ]),
-    eval: async (expression) => {
-      const r = await send('script.evaluate', { expression, target: { context }, awaitPromise: true })
-      if (r.type === 'exception') throw new Error(`page exception: ${r.exceptionDetails?.text}`)
-      return r.result?.value
-    },
-    // Sets an input's value the way React notices (native setter + event).
-    type: (selector, text) => page.eval(`(() => {
-      const el = document.querySelector(${JSON.stringify(selector)})
-      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(el, ${JSON.stringify(text)})
-      el.dispatchEvent(new Event('input', { bubbles: true }))
-      return true
-    })()`),
-    click: (selector) => page.eval(`(document.querySelector(${JSON.stringify(selector)}).click(), true)`),
-    waitFor: async (expression, timeoutMs = 8000) => {
-      const end = Date.now() + timeoutMs
-      while (Date.now() < end) {
-        try { if (await page.eval(expression)) return } catch { /* not ready yet */ }
-        await sleep(100)
-      }
-      throw new Error(`timed out waiting for: ${expression}`)
-    },
-    screenshot: async (path) => {
-      const r = await send('browsingContext.captureScreenshot', { context })
-      writeFileSync(path, Buffer.from(r.data, 'base64'))
-    },
-    close: async () => {
-      // session.end may never answer once Firefox starts shutting down.
-      await Promise.race([send('session.end').catch(() => {}), sleep(500)])
-      ws.close()
-      proc.kill()
-      await sleep(200)
-      rmSync(profile, { recursive: true, force: true })
-    },
+  // One "page" object per browsing context (tab).
+  const makePage = (context) => {
+    const page = {
+      // navigate can occasionally hang on 'complete', so wait for
+      // 'interactive' and cap it; callers wait for the element they need.
+      goto: (url) => Promise.race([
+        send('browsingContext.navigate', { context, url, wait: 'interactive' }),
+        sleep(5000),
+      ]),
+      eval: async (expression) => {
+        const r = await send('script.evaluate', { expression, target: { context }, awaitPromise: true })
+        if (r.type === 'exception') throw new Error(`page exception: ${r.exceptionDetails?.text}`)
+        return r.result?.value
+      },
+      // Sets an input's value the way React notices (native setter + event).
+      type: (selector, text) => page.eval(`(() => {
+        const el = document.querySelector(${JSON.stringify(selector)})
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(el, ${JSON.stringify(text)})
+        el.dispatchEvent(new Event('input', { bubbles: true }))
+        return true
+      })()`),
+      click: (selector) => page.eval(`(document.querySelector(${JSON.stringify(selector)}).click(), true)`),
+      waitFor: async (expression, timeoutMs = 8000) => {
+        const end = Date.now() + timeoutMs
+        while (Date.now() < end) {
+          try { if (await page.eval(expression)) return } catch { /* not ready yet */ }
+          await sleep(100)
+        }
+        throw new Error(`timed out waiting for: ${expression}`)
+      },
+      screenshot: async (path) => {
+        const r = await send('browsingContext.captureScreenshot', { context })
+        writeFileSync(path, Buffer.from(r.data, 'base64'))
+      },
+      // Opens another tab in the same browser (shares localStorage).
+      newPage: async () => makePage((await send('browsingContext.create', { type: 'tab' })).context),
+      close: async () => {
+        // session.end may never answer once Firefox starts shutting down.
+        await Promise.race([send('session.end').catch(() => {}), sleep(500)])
+        ws.close()
+        proc.kill()
+        await sleep(200)
+        rmSync(profile, { recursive: true, force: true })
+      },
+    }
+    return page
   }
+
+  const page = makePage((await send('browsingContext.getTree', {})).contexts[0].context)
   return page
 }
