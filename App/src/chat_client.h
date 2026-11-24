@@ -27,7 +27,7 @@ struct ChatLine {
     std::string name;   // Chat and Dm: the sender
     std::string to;     // Dm only
     std::string text;
-    uint64_t timestamp; // ms since epoch, Chat only
+    uint64_t timestamp; // ms since epoch (for system lines: when received)
     bool own;
     bool history;       // replayed by the server when we joined
 };

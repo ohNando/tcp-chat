@@ -492,6 +492,11 @@ bool ChatClient::alreadyShown(const message_t& chat) const {
 void ChatClient::addLine(ChatLine::Kind kind, std::string text, std::string name,
                          uint64_t ts, bool own, bool history, std::string to) {
     if (lines_.size() >= MAX_LINES) lines_.erase(lines_.begin(), lines_.begin() + MAX_LINES / 10);
+    // System lines have no server timestamp: use the time we got them, so
+    // the chat view can put them under the right day.
+    if (ts == 0)
+        ts = static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::system_clock::now().time_since_epoch()).count());
     lines_.push_back(ChatLine{ kind, std::move(name), std::move(to), std::move(text), ts, own, history });
     lines_version_++;
 }
