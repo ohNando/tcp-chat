@@ -28,7 +28,11 @@ const sodium = sodiumModule
 /* ---------------- server process ---------------- */
 
 const workDir = mkdtempSync(join(tmpdir(), 'tcpchat-e2e-'))
-const server = spawn(SERVER, ['-p', String(TCP_PORT), '-w', String(WS_PORT)], { cwd: workDir })
+// A short idle timeout (pings after 1.2 s, drops after 3 s) lets the
+// heartbeat be tested quickly.
+const IDLE_TIMEOUT_S = 3
+const server = spawn(SERVER, ['-p', String(TCP_PORT), '-w', String(WS_PORT), '-t', String(IDLE_TIMEOUT_S)],
+                     { cwd: workDir })
 let serverLog = ''
 const serverFingerprint = await new Promise((resolve, reject) => {
   server.on('error', reject)
@@ -45,8 +49,9 @@ const serverFingerprint = await new Promise((resolve, reject) => {
 // A chat client over either transport. Received messages are queued so the
 // test can await them in order.
 class Client {
-  constructor(name, { pin = serverFingerprint } = {}) {
+  constructor(name, { pin = serverFingerprint, answerPings = true } = {}) {
     this.name = name
+    this.answerPings = answerPings
     this.inbox = []
     this.waiters = []
     this.seq = 0
@@ -77,6 +82,14 @@ class Client {
     return m
   }
 
+  // Skips other messages until one of `type` arrives.
+  async waitFor(type, timeoutMs = 2000) {
+    for (;;) {
+      const m = await this.next(timeoutMs)
+      if (m.type === type) return m
+    }
+  }
+
   onRecord(rec) {
     try {
       const plain = this.channel.receive(rec)
@@ -84,7 +97,13 @@ class Client {
         if (this.channel.established) this.push({ type: 'established' })
         return
       }
-      this.push(decodeMessage(plain))
+      const m = decodeMessage(plain)
+      if (m.type === FT.PING) {
+        // Real clients answer the server's heartbeat; a "dead" one does not.
+        if (this.answerPings) this.send({ type: FT.PONG })
+        return
+      }
+      this.push(m)
     } catch (e) {
       this.push({ type: 'error', error: e })
     }
@@ -197,6 +216,23 @@ step('quit ends the stream and others see LEAVE', async () => {
   bob.send({ type: FT.QUIT }, true)
   await bob.expect('closed')
   assert.equal((await alice.expect(FT.LEAVE)).name, 'bob')
+})
+
+step('a client that stops answering is dropped by the heartbeat', async () => {
+  const dave = new TcpClient('dave', { answerPings: false }).connect()
+  await dave.expect('established')
+  dave.send({ type: FT.NAME, name: 'dave' })
+  await dave.expect(FT.WELCOME)
+  assert.equal((await alice.expect(FT.JOIN)).name, 'dave')
+  // alice answers pings and must survive; dave goes silent and must not.
+  const left = await alice.next((IDLE_TIMEOUT_S + 3) * 1000)
+  assert.deepEqual([left.type, left.name], [FT.LEAVE, 'dave'])
+  await dave.waitFor('closed')
+})
+
+step('a client that answers pings stays connected past the timeout', async () => {
+  alice.send({ type: FT.MSG, text: 'still here' })
+  assert.equal((await alice.expect(FT.CHAT)).text, 'still here')
 })
 
 step('a wrong pinned fingerprint is refused', async () => {
