@@ -198,26 +198,52 @@ void App::draw() {
 }
 
 void App::drawConnectScreen() {
-    const float width = 360.0f;
+    const float width = 340.0f, pad = 28.0f;
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+
+    // Page: the chat wallpaper (or the page color) behind a centered card.
+    ImVec2 w0 = ImGui::GetWindowPos();
+    ImVec2 w1(w0.x + ImGui::GetWindowWidth(), w0.y + ImGui::GetWindowHeight());
+    dl->AddRectFilled(w0, w1, to_u32(palette_.bg));
+    wallpaper_.draw(dl, w0, w1, settings_, palette_);
+
     ImGui::SetCursorPos(ImVec2(ImGui::GetContentRegionMax().x - 90.0f, ImGui::GetStyle().WindowPadding.y));
     if (ImGui::Button("Settings", ImVec2(90.0f, 0))) settings_ui_.open = !settings_ui_.open;
-    ImVec2 avail = ImGui::GetContentRegionAvail();
-    ImGui::SetCursorPos(ImVec2((avail.x - width) * 0.5f, avail.y * 0.25f));
+
+    ImVec2 avail = ImGui::GetContentRegionMax();
+    ImGui::SetCursorPos(ImVec2((avail.x - width) * 0.5f, avail.y * 0.18f));
+    // Content goes on the top channel; the card is drawn under it once its
+    // size is known.
+    dl->ChannelsSplit(2);
+    dl->ChannelsSetCurrent(1);
     ImGui::BeginGroup();
 
-    ImGui::SetWindowFontScale(1.6f);
+    const float r = 26.0f;
+    ImVec2 c = ImGui::GetCursorScreenPos();
+    c = ImVec2(c.x + width / 2, c.y + r);
+    dl->AddCircleFilled(c, r, to_u32(palette_.accent));
+    ImGui::PushFont(nullptr, ImGui::GetStyle().FontSizeBase * 1.5f);
+    ImVec2 hs = ImGui::CalcTextSize("#");
+    dl->AddText(ImVec2(c.x - hs.x / 2, c.y - hs.y / 2), to_u32(palette_.accent_text), "#");
+    ImGui::Dummy(ImVec2(width, 2 * r + 8));
+    ImVec2 ts = ImGui::CalcTextSize("TCP Chat");
+    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (width - ts.x) / 2);
     ImGui::TextUnformatted("TCP Chat");
-    ImGui::SetWindowFontScale(1.0f);
+    ImGui::PopFont();
+    const char* sub = "Encrypted chat over TCP and WebSocket";
+    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (width - ImGui::CalcTextSize(sub).x) / 2);
+    ImGui::TextDisabled("%s", sub);
+    ImGui::Spacing();
     ImGui::Spacing();
 
     ImGui::PushItemWidth(width);
-    ImGui::TextUnformatted("Server");
+    ImGui::TextDisabled("Server");
     ImGui::InputText("##host", host_, sizeof(host_));
-    ImGui::TextUnformatted("Port");
+    ImGui::TextDisabled("Port");
     ImGui::InputInt("##port", &port_, 0);
-    ImGui::TextUnformatted("Name");
-    bool enter = ImGui::InputText("##name", name_, sizeof(name_),
-                                  ImGuiInputTextFlags_EnterReturnsTrue);
+    ImGui::TextDisabled("Name");
+    bool enter = ImGui::InputTextWithHint("##name", "Your name", name_, sizeof(name_),
+                                          ImGuiInputTextFlags_EnterReturnsTrue);
     ImGui::PopItemWidth();
     ImGui::Spacing();
 
@@ -236,6 +262,14 @@ void App::drawConnectScreen() {
         ImGui::PopTextWrapPos();
     }
     ImGui::EndGroup();
+
+    ImVec2 g0 = ImGui::GetItemRectMin(), g1 = ImGui::GetItemRectMax();
+    dl->ChannelsSetCurrent(0);
+    ImVec2 c0(g0.x - pad, g0.y - pad), c1(g1.x + pad, g1.y + pad);
+    dl->AddRectFilled(ImVec2(c0.x, c0.y + 4), ImVec2(c1.x, c1.y + 4), IM_COL32(0, 0, 0, 40), 18); // shadow
+    dl->AddRectFilled(c0, c1, to_u32(palette_.panel), 18);
+    dl->AddRect(c0, c1, to_u32(palette_.border), 18);
+    dl->ChannelsMerge();
 }
 
 void App::leave() {
