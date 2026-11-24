@@ -47,7 +47,27 @@ add_library(imgui STATIC
   ${imgui_SOURCE_DIR}/backends/imgui_impl_opengl3.cpp
 )
 target_include_directories(imgui PUBLIC ${imgui_SOURCE_DIR} ${imgui_SOURCE_DIR}/backends)
+# 32-bit characters: emoji live above U+FFFF.
+target_compile_definitions(imgui PUBLIC IMGUI_USE_WCHAR32)
 target_link_libraries(imgui PUBLIC PkgConfig::GLFW OpenGL::GL)
+
+# Monochrome Noto Emoji (SIL OFL 1.1), merged into the UI font so emoji
+# render. Color emoji fonts need FreeType, which ImGui does not use here.
+# Optional: without it (offline build) emoji show as boxes.
+set(EMOJI_URL https://raw.githubusercontent.com/google/fonts/06bfe0d62a98375cb09c942fa18e68bd32cff057/ofl/notoemoji)
+set(EMOJI_FONT ${CMAKE_BINARY_DIR}/fonts/NotoEmoji.ttf)
+if(NOT EXISTS ${EMOJI_FONT})
+  file(DOWNLOAD ${EMOJI_URL}/NotoEmoji%5Bwght%5D.ttf ${EMOJI_FONT}
+       EXPECTED_HASH SHA256=de6c18832938afc99caf132b39d6a30a19bac7f2e812e28db2535b4608d27551
+       STATUS emoji_status)
+  list(GET emoji_status 0 emoji_rc)
+  if(emoji_rc EQUAL 0)
+    file(DOWNLOAD ${EMOJI_URL}/OFL.txt ${CMAKE_BINARY_DIR}/fonts/NotoEmoji-OFL.txt)
+  else()
+    file(REMOVE ${EMOJI_FONT})
+    message(WARNING "Could not download Noto Emoji; emoji will not render")
+  endif()
+endif()
 
 # ---- Shared C core --------------------------------------------------------
 # Protocol and crypto modules are compiled straight from the backend, so the
@@ -91,6 +111,7 @@ add_executable(tcp-chat-desktop
 )
 target_include_directories(tcp-chat-desktop PRIVATE ${stb_SOURCE_DIR})
 target_compile_options(tcp-chat-desktop PRIVATE -Wall -Wextra)
+target_compile_definitions(tcp-chat-desktop PRIVATE EMOJI_FONT_PATH="${EMOJI_FONT}")
 target_link_libraries(tcp-chat-desktop PRIVATE imgui chat_client Threads::Threads)
 
 # Headless test against a running server: client_smoke <host> <port>

@@ -18,6 +18,12 @@ static void glfw_error(int code, const char* desc) {
     std::fprintf(stderr, "GLFW error %d: %s\n", code, desc);
 }
 
+static bool file_exists(const char* path) {
+    FILE* f = std::fopen(path, "rb");
+    if (f) std::fclose(f);
+    return f != nullptr;
+}
+
 // ImGui's built-in font only covers ASCII. Use a system font so names like
 // "Şükrü" render; ImGui 1.92 loads glyphs on demand, no ranges needed.
 static void load_font(float size) {
@@ -33,14 +39,34 @@ static void load_font(float size) {
         "C:\\Windows\\Fonts\\segoeui.ttf",
     };
     ImGuiIO& io = ImGui::GetIO();
-    for (const char* path : candidates) {
-        if (FILE* f = std::fopen(path, "rb")) {
-            std::fclose(f);
-            if (io.Fonts->AddFontFromFileTTF(path, size)) return;
+    bool loaded = false;
+    for (const char* path : candidates)
+        if (file_exists(path) && io.Fonts->AddFontFromFileTTF(path, size)) {
+            loaded = true;
+            break;
         }
+    if (!loaded) {
+        std::fprintf(stderr, "warning: no system font found, non-ASCII text may not render\n");
+        io.Fonts->AddFontDefault();
     }
-    std::fprintf(stderr, "warning: no system font found, non-ASCII text may not render\n");
-    io.Fonts->AddFontDefault();
+
+    // Emoji come from a monochrome emoji font merged into the main one, so
+    // they take the text color. Installed fonts first, then the build's copy.
+    static const char* emoji[] = {
+        "/usr/share/fonts/google-noto-emoji-fonts/NotoEmoji-Regular.ttf",
+        "/usr/share/fonts/noto/NotoEmoji-Regular.ttf",
+        "/usr/share/fonts/truetype/noto/NotoEmoji-Regular.ttf",
+        "/usr/share/fonts/gdouros-symbola/Symbola.ttf",
+        "/usr/share/fonts/truetype/ancient-scripts/Symbola_hint.ttf",
+#ifdef EMOJI_FONT_PATH
+        EMOJI_FONT_PATH,
+#endif
+    };
+    ImFontConfig merge;
+    merge.MergeMode = true;
+    for (const char* path : emoji)
+        if (file_exists(path) && io.Fonts->AddFontFromFileTTF(path, size, &merge)) return;
+    std::fprintf(stderr, "warning: no emoji font found, emoji will show as boxes\n");
 }
 
 // Reads the back buffer and writes a binary PPM (convert with ImageMagick).
