@@ -2,6 +2,9 @@ import { useEffect, useRef, useState } from 'react'
 
 import { Status, useChat } from './hooks/useChat'
 import { useSettings } from './theme/useSettings'
+import { groupMessages } from './chat/groupMessages'
+import Avatar from './components/Avatar'
+import { nameColor } from './chat/names'
 import { NAME_MAX_LEN, TEXT_MAX_LEN } from './protocol/frame'
 import './App.css'
 
@@ -86,41 +89,68 @@ function UserList({ users, me, keyedPeers, dmTarget, onPick }) {
       <ul>
         {[...users].sort((a, b) => a.localeCompare(b)).map((u) => {
           const canDm = u !== me && keyedPeers.includes(u)
+          const body = (
+            <>
+              <span className="user-avatar"><Avatar name={u} size={32} /><span className="online-dot" /></span>
+              <span className="user-name">{u}{u === me && <span className="you"> (you)</span>}</span>
+              {canDm && <span className="lock" aria-hidden>🔒</span>}
+            </>
+          )
           return (
-            <li key={u} className={`${u === me ? 'me' : ''}${u === dmTarget ? ' selected' : ''}`}>
-              <span className="dot" />
+            <li key={u} className={u === dmTarget ? 'selected' : ''}>
               {canDm ? (
-                <button type="button" className="user-dm" title={`Private message to ${u}`}
+                <button type="button" className="user-row" title={`Private message to ${u}`}
                         onClick={() => onPick(u === dmTarget ? null : u)}>
-                  {u} <span aria-hidden>🔒</span>
+                  {body}
                 </button>
               ) : (
-                <span>{u}</span>
+                <div className="user-row">{body}</div>
               )}
-              {u === me && <span className="you"> (you)</span>}
             </li>
           )
         })}
       </ul>
-      {keyedPeers.length > 0 && <p className="hint">Click a name for an encrypted private message.</p>}
+      {keyedPeers.length > 0 && <p className="hint">Click a 🔒 name for an encrypted private message.</p>}
     </aside>
   )
 }
 
-function Message({ m }) {
-  if (m.kind === 'chat' || m.kind === 'dm') {
-    const dm = m.kind === 'dm'
-    const classes = ['message', m.own ? 'own' : 'other', dm && 'dm', m.history && 'history']
-    return (
-      <div className={classes.filter(Boolean).join(' ')}>
-        {dm && <div className="message-dm">🔒 private {m.own ? `to ${m.to}` : `from ${m.name}`}</div>}
-        {!dm && !m.own && <div className="message-sender">{m.name}</div>}
-        <div className="message-content">{m.text}</div>
-        <div className="message-time">{formatTime(m.ts)}</div>
+function Bubble({ item }) {
+  const { m, first, last } = item
+  const dm = m.kind === 'dm'
+  const showName = first && !m.own && !dm
+  const rowClass = ['msg-row', m.own ? 'own' : 'other', first && 'first', last && 'last',
+                    m.history && 'history'].filter(Boolean).join(' ')
+  return (
+    <div className={rowClass}>
+      {!m.own && (first ? <Avatar name={m.name} /> : <span className="avatar-spacer" />)}
+      <div className={`bubble${dm ? ' dm' : ''}`}>
+        {showName && <div className="bubble-name" style={{ color: nameColor(m.name) }}>{m.name}</div>}
+        {dm && <div className="bubble-dm">🔒 Private {m.own ? `to ${m.to}` : `from ${m.name}`}</div>}
+        <span className="bubble-text">{m.text}</span>
+        <span className="bubble-time">{formatTime(m.ts)}</span>
       </div>
-    )
-  }
-  return <div className={`message server${m.kind === 'error' ? ' error-line' : ''}`}>{m.text}</div>
+    </div>
+  )
+}
+
+function MessageList({ messages, endRef }) {
+  const items = groupMessages(messages)
+  return (
+    <div className="messages-box">
+      {items.map((it) => {
+        if (it.type === 'date') return <div key={it.key} className="day-separator"><span>{it.label}</span></div>
+        if (it.type === 'line')
+          return (
+            <div key={it.m.id} className={`system-line${it.m.kind === 'error' ? ' error-line' : ''}`}>
+              <span>{it.m.text}</span>
+            </div>
+          )
+        return <Bubble key={it.m.id} item={it} />
+      })}
+      <div ref={endRef} />
+    </div>
+  )
 }
 
 function typingText(names) {
@@ -155,12 +185,15 @@ function ChatScreen({ status, me, messages, users, typing, keyedPeers, error, re
     <div className="chat-layout">
       <div className="chat-container">
         <header className="header">
-          <h1>TCP Chat</h1>
-          <p className={`status status-${status}`}>
-            {me} · {STATUS_TEXT[status]}
-            {status === Status.DISCONNECTED && reconnectIn !== null &&
-              ` · retrying in ${Math.ceil(reconnectIn / 1000)}s`}
-          </p>
+          <span className="room-icon" aria-hidden>#</span>
+          <div className="header-titles">
+            <h1>TCP Chat</h1>
+            <p className={`status status-${status}`}>
+              {STATUS_TEXT[status]} · {users.length} online · signed in as {me}
+              {status === Status.DISCONNECTED && reconnectIn !== null &&
+                ` · retrying in ${Math.ceil(reconnectIn / 1000)}s`}
+            </p>
+          </div>
         </header>
 
         {error && (
@@ -170,10 +203,7 @@ function ChatScreen({ status, me, messages, users, typing, keyedPeers, error, re
           </div>
         )}
 
-        <div className="messages-box">
-          {messages.map((m) => <Message key={m.id} m={m} />)}
-          <div ref={endRef} />
-        </div>
+        <MessageList messages={messages} endRef={endRef} />
         <div className="typing" aria-live="polite">{typingText(typing)}</div>
 
         {target && (

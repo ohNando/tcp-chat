@@ -62,7 +62,8 @@ export function useChat() {
   const peers = useRef(new Map())
 
   const addMessage = useCallback((m) => {
-    setMessages((prev) => [...prev.slice(-(MAX_MESSAGES - 1)), { id: nextId++, ...m }])
+    // `at`: when we received it, used for date separators of system lines.
+    setMessages((prev) => [...prev.slice(-(MAX_MESSAGES - 1)), { id: nextId++, at: Date.now(), ...m }])
   }, [])
 
   const send = useCallback((m, final = false) => {

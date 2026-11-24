@@ -58,15 +58,15 @@ await step('joins the chat with a Turkish name', async () => {
   await ff.type('.login-screen input', 'Ayşe')
   await ff.click('.login-screen button')
   await ff.waitFor(`document.querySelector('.status')?.textContent.includes('Online')`)
-  assert.equal(await ff.eval(`document.querySelector('.user-list li')?.textContent`), 'Ayşe (you)')
+  assert.equal(await ff.eval(`document.querySelector('.user-list .user-name')?.textContent`), 'Ayşe (you)')
 })
 
 await step('a sent message comes back from the server', async () => {
   await ff.type('.input-form input', 'Merhaba <b>dünya</b>')
   await ff.click('.input-form button')
-  await ff.waitFor(`[...document.querySelectorAll('.message.own')].some(e => e.textContent.includes('dünya'))`)
+  await ff.waitFor(`[...document.querySelectorAll('.msg-row.own .bubble')].some(e => e.textContent.includes('dünya'))`)
   // Rendered as text, never as HTML.
-  assert.equal(await ff.eval(`!!document.querySelector('.message b')`), false)
+  assert.equal(await ff.eval(`!!document.querySelector('.bubble b')`), false)
 })
 
 const textOf = (sel) => `(document.querySelector('${sel}')?.textContent ?? '')`
@@ -85,27 +85,27 @@ await step('a second tab sees "is typing" while the first one types', async () =
 
 await step('the indicator disappears when the message is sent', async () => {
   await ff.click('.input-form button')
-  await other.waitFor(`[...document.querySelectorAll('.message.other')].some(e => e.textContent.includes('yazıyorum'))`)
+  await other.waitFor(`[...document.querySelectorAll('.msg-row.other .bubble')].some(e => e.textContent.includes('yazıyorum'))`)
   await other.waitFor(`!${textOf('.typing')}.includes('typing')`)
 })
 
 await step('a private message reaches only its recipient, marked as encrypted', async () => {
   // Mehmet picks Ayşe in the user list and writes to her.
-  await other.waitFor(`!!document.querySelector('.user-dm')`)
-  await other.click('.user-dm')
+  await other.waitFor(`!!document.querySelector('button.user-row')`)
+  await other.click('button.user-row')
   await other.waitFor(`${textOf('.dm-banner')}.includes('Ayşe')`)
   await other.type('.input-form input', 'sadece sana')
   await other.click('.input-form button')
 
-  await ff.waitFor(`[...document.querySelectorAll('.message.dm')].some(e =>
-    e.textContent.includes('sadece sana') && e.textContent.includes('from Mehmet'))`)
-  await other.waitFor(`[...document.querySelectorAll('.message.dm.own')].some(e =>
-    e.textContent.includes('to Ayşe'))`)
+  await ff.waitFor(`[...document.querySelectorAll('.bubble.dm')].some(e =>
+    e.textContent.includes('sadece sana') && e.textContent.includes('Private from Mehmet'))`)
+  await other.waitFor(`[...document.querySelectorAll('.msg-row.own .bubble.dm')].some(e =>
+    e.textContent.includes('Private to Ayşe'))`)
   assert.ok(!log.includes('sadece sana'), 'the server must not see the text')
 })
 
 await step('both sides show the same safety number', async () => {
-  await ff.click('.user-dm')
+  await ff.click('button.user-row')
   await ff.waitFor(`!!document.querySelector('.dm-banner code')`)
   const a = await ff.eval(`document.querySelector('.dm-banner code').textContent`)
   const b = await other.eval(`document.querySelector('.dm-banner code').textContent`)
