@@ -55,6 +55,44 @@ static void protocol_error(conn_t* c, const char* why) {
 /* Message handlers                                                  */
 /* ---------------------------------------------------------------- */
 
+/* ---------------------------------------------------------------- */
+/* Recent history: a ring buffer of the last SERVER_HISTORY_MAX chats */
+/* ---------------------------------------------------------------- */
+
+typedef struct {
+    uint64_t timestamp;
+    char name[NAME_MAX_LEN + 1];
+    char text[TEXT_MAX_LEN + 1];
+} history_entry_t;
+
+static history_entry_t history[SERVER_HISTORY_MAX];
+static size_t history_next;   /* slot the next message goes into */
+static size_t history_count;
+
+static void history_add(const message_t* chat) {
+    history_entry_t* e = &history[history_next];
+    e->timestamp = chat->timestamp;
+    memcpy(e->name, chat->name, sizeof(e->name));
+    memcpy(e->text, chat->text, sizeof(e->text));
+    history_next = (history_next + 1) % SERVER_HISTORY_MAX;
+    if (history_count < SERVER_HISTORY_MAX) history_count++;
+}
+
+/* Replays the history to one connection, oldest first. */
+static void history_send(conn_t* c) {
+    message_t m;
+    size_t oldest = (history_next + SERVER_HISTORY_MAX - history_count) % SERVER_HISTORY_MAX;
+    for (size_t i = 0; i < history_count; i++) {
+        const history_entry_t* e = &history[(oldest + i) % SERVER_HISTORY_MAX];
+        message_init(&m, FT_CHAT);
+        m.flags = FLAG_HISTORY;
+        m.timestamp = e->timestamp;
+        memcpy(m.name, e->name, sizeof(m.name));
+        memcpy(m.text, e->text, sizeof(m.text));
+        room_send_to(c, &m);
+    }
+}
+
 static void handle_name(conn_t* c, const message_t* in) {
     if (c->registered) {
         send_error(c, ERR_ALREADY_REGISTERED, "You already have a name.");
@@ -79,6 +117,9 @@ static void handle_name(conn_t* c, const message_t* in) {
     memcpy(c->name, in->name, sizeof(c->name));
     c->registered = 1;
     log_info("conn %d registered as '%s'", c->id, c->name);
+
+    /* Past messages first: the welcome line then separates old from new. */
+    history_send(c);
 
     message_t m;
     message_init(&m, FT_WELCOME);
@@ -110,6 +151,7 @@ static void handle_chat(conn_t* c, const message_t* in) {
     /* Sender included: the server is the single source of truth, so
      * clients render their own messages only when they come back. */
     room_broadcast(&room, &out, NULL);
+    history_add(&out);
 }
 
 static void handle_message(conn_t* c, const message_t* m) {

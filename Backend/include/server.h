@@ -30,5 +30,7 @@
  * one silent for the whole timeout is considered dead (pulled cable,
  * suspended laptop: TCP alone would keep it "open" forever). */
 #define SERVER_DEFAULT_IDLE_TIMEOUT_S 75
+/* Recent CHAT messages replayed to people who join (FLAG_HISTORY). */
+#define SERVER_HISTORY_MAX 50
 
 #endif

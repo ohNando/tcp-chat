@@ -14,7 +14,7 @@ import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import sodiumModule from 'libsodium-wrappers'
 
-import { FT, ERR, encodeMessage, decodeMessage } from '../src/protocol/frame.js'
+import { FT, ERR, FLAG, encodeMessage, decodeMessage } from '../src/protocol/frame.js'
 import { SecureChannel, SecureError, fingerprint } from '../src/protocol/secure.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -198,6 +198,28 @@ step('chat crosses transports and reaches the sender too', async () => {
   await bob.expect(FT.CHAT)
 })
 
+step('a new member receives recent history before the welcome', async () => {
+  const erin = new WsClient('erin').connect()
+  await erin.expect('established')
+  erin.send({ type: FT.NAME, name: 'erin' })
+  const first = await erin.expect(FT.CHAT)
+  const second = await erin.expect(FT.CHAT)
+  assert.deepEqual([first.name, first.text, first.flags], ['alice', 'merhaba from the browser 🌍', FLAG.HISTORY])
+  assert.deepEqual([second.name, second.text, second.flags], ['bob', 'hi from the terminal', FLAG.HISTORY])
+  await erin.expect(FT.WELCOME)
+  erin.send({ type: FT.QUIT }, true)
+  await erin.waitFor('closed')
+  assert.equal((await alice.expect(FT.JOIN)).name, 'erin')
+  assert.equal((await alice.expect(FT.LEAVE)).name, 'erin')
+  await bob.waitFor(FT.LEAVE)
+})
+
+step('live messages are not flagged as history', async () => {
+  alice.send({ type: FT.MSG, text: 'live' })
+  assert.equal((await alice.expect(FT.CHAT)).flags, 0)
+  await bob.waitFor(FT.CHAT)
+})
+
 step('duplicate names are rejected', async () => {
   const carol = new WsClient('carol').connect()
   await carol.expect('established')
@@ -222,7 +244,7 @@ step('a client that stops answering is dropped by the heartbeat', async () => {
   const dave = new TcpClient('dave', { answerPings: false }).connect()
   await dave.expect('established')
   dave.send({ type: FT.NAME, name: 'dave' })
-  await dave.expect(FT.WELCOME)
+  await dave.waitFor(FT.WELCOME) // after the replayed history
   assert.equal((await alice.expect(FT.JOIN)).name, 'dave')
   // alice answers pings and must survive; dave goes silent and must not.
   const left = await alice.next((IDLE_TIMEOUT_S + 3) * 1000)
