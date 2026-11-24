@@ -30,6 +30,13 @@ public:
     void draw();
     ImVec4 clearColor() const { return palette_.bg; }
 
+    // Unread messages while the window is not focused: shown in the title.
+    void setFocused(bool focused) { focused_ = focused; }
+    std::string windowTitle() const;
+    // True once per DM or mention that arrived unfocused: the window should
+    // ask for attention (taskbar flash).
+    bool takeAttentionRequest();
+
 private:
     void drawConnectScreen();
     void drawChatScreen();
@@ -51,6 +58,7 @@ private:
     void saveSettings();
     void applyLook();   // after any change to the look settings
     void pollImagePicker();
+    void countUnread();
     void drawWallpaper();
 
     ChatClient client_;
@@ -74,6 +82,10 @@ private:
     int port_ = 8080;
     char name_[NAME_MAX_LEN + 1] = "";
     char input_[TEXT_MAX_LEN + 1] = "";
+    bool focused_ = true;
+    int unread_ = 0;
+    bool attention_ = false;
+    uint64_t unread_version_ = 0; // lines version counted last
     int input_cursor_ = 0;        // byte offset of the text cursor
     bool focus_input_ = true;
     uint64_t seen_version_ = 0;   // lines version drawn last frame

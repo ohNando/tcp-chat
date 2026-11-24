@@ -160,6 +160,7 @@ int main(int argc, char** argv) {
     App app(autorun);
     // Time based: a hidden window may not be throttled by vsync.
     const double screenshot_at = glfwGetTime() + wait;
+    std::string shown_title = "TCP Chat";
 
     while (!glfwWindowShouldClose(window)) {
         // Idle: sleep until input arrives, waking every 50 ms to check the
@@ -168,7 +169,14 @@ int main(int argc, char** argv) {
             glfwPollEvents();
         else
             glfwWaitEventsTimeout(0.05);
+        app.setFocused(glfwGetWindowAttrib(window, GLFW_FOCUSED) == GLFW_TRUE);
         app.poll();
+        std::string title = app.windowTitle();
+        if (title != shown_title) {
+            glfwSetWindowTitle(window, title.c_str());
+            shown_title = title;
+        }
+        if (app.takeAttentionRequest()) glfwRequestWindowAttention(window);
 
         ImGui_ImplOpenGL3_NewFrame();
         ImGui_ImplGlfw_NewFrame();

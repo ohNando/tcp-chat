@@ -48,6 +48,47 @@ void App::applyLook() {
     apply_style(palette_, settings_);
 }
 
+static std::string lower_ascii(std::string s) {
+    for (char& c : s)
+        if (c >= 'A' && c <= 'Z') c = static_cast<char>(c - 'A' + 'a');
+    return s;
+}
+
+// Same rule as isNotable() in the web client: DMs and mentions of our name.
+static bool is_notable(const ChatLine& l, const std::string& me) {
+    if (l.own || l.history) return false;
+    if (l.kind == ChatLine::Dm) return true;
+    return l.kind == ChatLine::Chat && !me.empty() && lower_ascii(l.text).find(lower_ascii(me)) != std::string::npos;
+}
+
+void App::countUnread() {
+    uint64_t v = client_.linesVersion();
+    if (focused_) unread_ = 0;
+    if (v == unread_version_) return;
+    // Each new line bumps the version by one, so the last (v - seen) lines
+    // are new (old lines may have been trimmed from the front meanwhile).
+    const std::vector<ChatLine>& lines = client_.lines();
+    size_t fresh = std::min<uint64_t>(v - unread_version_, lines.size());
+    unread_version_ = v;
+    if (focused_) return;
+    for (size_t i = lines.size() - fresh; i < lines.size(); i++) {
+        const ChatLine& l = lines[i];
+        if ((l.kind != ChatLine::Chat && l.kind != ChatLine::Dm) || l.own || l.history) continue;
+        unread_++;
+        if (is_notable(l, client_.name())) attention_ = true;
+    }
+}
+
+std::string App::windowTitle() const {
+    return unread_ > 0 ? "(" + std::to_string(unread_) + ") TCP Chat" : "TCP Chat";
+}
+
+bool App::takeAttentionRequest() {
+    bool a = attention_;
+    attention_ = false;
+    return a;
+}
+
 // The file dialog is a separate program; run it on a thread so the window
 // keeps drawing (and the connection keeps its heartbeat) meanwhile.
 void App::pollImagePicker() {
@@ -110,6 +151,8 @@ void App::poll() {
             startConnect();
         }
     }
+
+    countUnread();
 
     if (autorun_.trust && client_.trustPending()) client_.acceptPendingKey();
     if (!said_ && !autorun_.say.empty() && client_.state() == ConnState::Chatting) {
