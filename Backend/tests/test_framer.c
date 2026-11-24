@@ -134,6 +134,41 @@ TEST(peek_and_consume_raw_bytes) {
     framer_free(&f);
 }
 
+TEST(buffer_grows_for_large_records_and_shrinks_when_empty) {
+    framer_t f;
+    const uint8_t* body; size_t len;
+    static uint8_t wire[RECORD_HEADER_SIZE + 50000];
+
+    framer_init(&f, 60000);
+    CHECK_EQ_INT(f.cap, FRAMER_INITIAL_CAP);
+
+    record_put_header(wire, 50000);
+    for (size_t i = 0; i < 50000; i++) wire[RECORD_HEADER_SIZE + i] = (uint8_t)i;
+    CHECK_EQ_INT(framer_feed(&f, wire, sizeof(wire)), sizeof(wire));
+    CHECK(f.cap >= sizeof(wire));
+    CHECK(f.cap <= f.max_cap);
+
+    CHECK_EQ_INT(framer_next(&f, &body, &len), 1);
+    CHECK_EQ_INT(len, 50000);
+    CHECK_EQ_MEM(body, wire + RECORD_HEADER_SIZE, 50000);
+
+    size_t avail;
+    framer_space(&f, &avail);                 /* empty again: shrinks */
+    CHECK_EQ_INT(f.cap, FRAMER_INITIAL_CAP);
+    framer_free(&f);
+}
+
+TEST(full_buffer_at_max_size_reports_no_space) {
+    framer_t f;
+    size_t avail;
+    uint8_t junk[64] = { 0 };
+    framer_init(&f, 16);                      /* max_cap = 20 */
+    CHECK_EQ_INT(framer_feed(&f, junk, sizeof(junk)), 20);
+    framer_space(&f, &avail);
+    CHECK_EQ_INT(avail, 0);
+    framer_free(&f);
+}
+
 int main(void) {
     RUN(single_complete_record);
     RUN(record_split_byte_by_byte);
@@ -142,5 +177,7 @@ int main(void) {
     RUN(oversized_record_is_rejected);
     RUN(buffer_compacts_to_fit_max_record);
     RUN(peek_and_consume_raw_bytes);
+    RUN(buffer_grows_for_large_records_and_shrinks_when_empty);
+    RUN(full_buffer_at_max_size_reports_no_space);
     return TEST_REPORT();
 }

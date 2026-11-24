@@ -5,8 +5,9 @@
 
 int framer_init(framer_t* f, size_t max_body) {
     /* One partial record never needs more than header + max_body bytes,
-     * so after compaction there is always room to finish it. */
-    f->cap = RECORD_HEADER_SIZE + max_body;
+     * so after compaction and growth there is always room to finish it. */
+    f->max_cap = RECORD_HEADER_SIZE + max_body;
+    f->cap = f->max_cap < FRAMER_INITIAL_CAP ? f->max_cap : FRAMER_INITIAL_CAP;
     f->buf = malloc(f->cap);
     f->start = 0;
     f->end = 0;
@@ -17,7 +18,7 @@ int framer_init(framer_t* f, size_t max_body) {
 void framer_free(framer_t* f) {
     free(f->buf);
     f->buf = NULL;
-    f->cap = f->start = f->end = 0;
+    f->cap = f->max_cap = f->start = f->end = 0;
 }
 
 static void compact(framer_t* f) {
@@ -28,8 +29,24 @@ static void compact(framer_t* f) {
     f->end = pending;
 }
 
+static void resize(framer_t* f, size_t cap) {
+    uint8_t* p = realloc(f->buf, cap);
+    if (!p) return; /* keep the old buffer; the caller just sees less space */
+    f->buf = p;
+    f->cap = cap;
+}
+
 uint8_t* framer_space(framer_t* f, size_t* avail) {
     compact(f);
+
+    size_t initial = f->max_cap < FRAMER_INITIAL_CAP ? f->max_cap : FRAMER_INITIAL_CAP;
+    if (f->end == 0 && f->cap > initial) {
+        resize(f, initial);                /* burst is over: give memory back */
+    } else if (f->end == f->cap && f->cap < f->max_cap) {
+        size_t cap = f->cap * 2;           /* full: grow geometrically */
+        resize(f, cap < f->max_cap ? cap : f->max_cap);
+    }
+
     *avail = f->cap - f->end;
     return f->buf + f->end;
 }
@@ -40,12 +57,18 @@ void framer_commit(framer_t* f, size_t n) {
 }
 
 size_t framer_feed(framer_t* f, const void* data, size_t n) {
-    size_t avail;
-    uint8_t* p = framer_space(f, &avail);
-    if (n > avail) n = avail;
-    memcpy(p, data, n);
-    framer_commit(f, n);
-    return n;
+    const uint8_t* src = data;
+    size_t taken = 0;
+    while (taken < n) {
+        size_t avail;
+        uint8_t* p = framer_space(f, &avail);
+        if (avail == 0) break;
+        size_t k = n - taken < avail ? n - taken : avail;
+        memcpy(p, src + taken, k);
+        framer_commit(f, k);
+        taken += k;
+    }
+    return taken;
 }
 
 int framer_next(framer_t* f, const uint8_t** body, size_t* len) {

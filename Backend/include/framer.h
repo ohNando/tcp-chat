@@ -26,9 +26,14 @@
 /* Largest body we accept: a full frame plus room for encryption overhead. */
 #define RECORD_MAX_BODY    (FRAME_MAX_SIZE + 64)
 
+/* Buffers start small and grow on demand up to the size of one maximal
+ * record, so idle connections cost 4 KiB instead of 64 KiB. */
+#define FRAMER_INITIAL_CAP 4096
+
 typedef struct {
     uint8_t* buf;
-    size_t cap;
+    size_t cap;      /* current allocation */
+    size_t max_cap;  /* header + max_body: enough for any single record */
     size_t start;    /* first unconsumed byte */
     size_t end;      /* one past the last buffered byte */
     size_t max_body;
@@ -37,11 +42,14 @@ typedef struct {
 int framer_init(framer_t* f, size_t max_body);
 void framer_free(framer_t* f);
 
-/* Free space to read into. Compacts the buffer first. */
+/* Free space to read into. Compacts the buffer first, grows it when it is
+ * full, and shrinks it back once it is empty again. Returns *avail == 0
+ * only when the buffer is full at its maximum size. */
 uint8_t* framer_space(framer_t* f, size_t* avail);
 void framer_commit(framer_t* f, size_t n);
 
-/* Copies as much of `data` as fits; returns the number of bytes taken. */
+/* Copies as much of `data` as fits (growing as needed); returns the number
+ * of bytes taken. */
 size_t framer_feed(framer_t* f, const void* data, size_t n);
 
 /* 1: a record is available (body valid until the next space/feed call),
