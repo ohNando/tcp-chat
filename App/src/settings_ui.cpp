@@ -1,5 +1,7 @@
 #include "settings_ui.h"
 
+#include <algorithm>
+
 
 namespace {
 
@@ -82,9 +84,39 @@ bool segmented(const char* id, std::string& value, const char* const* options, c
     return changed;
 }
 
+// A small preview of a wallpaper; "none" shows the plain chat color.
+bool wallpaper_card(const char* id, const char* name, bool selected, const Settings& s, const Palette& p,
+                    WallpaperRenderer& wr) {
+    const ImVec2 size(76, 56);
+    ImGui::PushID(id);
+    ImGui::BeginGroup();
+    ImVec2 p0 = ImGui::GetCursorScreenPos();
+    bool clicked = ImGui::InvisibleButton("wp", size);
+    bool hovered = ImGui::IsItemHovered();
+    ImVec2 p1(p0.x + size.x, p0.y + size.y);
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+
+    Settings preview = s;
+    preview.wallpaper = id;
+    dl->AddRectFilled(p0, p1, to_u32(p.bg), 8);
+    if (wr.draw(dl, p0, p1, preview, p)) {
+        // Round the corners of the square preview by painting them over.
+        dl->AddRect(ImVec2(p0.x - 3, p0.y - 3), ImVec2(p1.x + 3, p1.y + 3), to_u32(p.panel), 11, 0, 6.0f);
+    }
+    dl->AddRect(p0, p1, to_u32(selected ? p.accent : hovered ? p.muted : p.border), 8, 0, selected ? 3.0f : 1.0f);
+
+    ImVec2 ts = ImGui::CalcTextSize(name);
+    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (size.x - ts.x) / 2);
+    ImGui::TextDisabled("%s", name);
+    ImGui::EndGroup();
+    ImGui::PopID();
+    return clicked;
+}
+
 } // namespace
 
-bool draw_settings_window(bool* open, Settings& s, const Palette& p) {
+bool draw_settings_window(SettingsUi& ui, Settings& s, const Palette& p, WallpaperRenderer& wr) {
+    bool* open = &ui.open;
     if (!*open) return false;
     bool changed = false;
 
@@ -120,6 +152,68 @@ bool draw_settings_window(bool* open, Settings& s, const Palette& p) {
     changed |= color_row("Accent", s.accent, tp.accent);
     changed |= color_row("My messages", s.own_bubble, tp.own_bubble);
     changed |= color_row("Their messages", s.other_bubble, tp.other_bubble);
+
+    section("BACKGROUND");
+    int nw;
+    const WallpaperInfo* walls = wallpaper_list(&nw);
+    int per_row = std::max(1, static_cast<int>((ImGui::GetContentRegionAvail().x + 8) / 84));
+    for (int i = -1; i < nw; i++) {
+        const char* id = i < 0 ? "none" : walls[i].id;
+        const char* name = i < 0 ? "None" : walls[i].name;
+        if ((i + 1) % per_row) ImGui::SameLine(0, 8);
+        if (wallpaper_card(id, name, s.wallpaper == id, s, p, wr) && s.wallpaper != id) {
+            s.wallpaper = id;
+            changed = true;
+        }
+    }
+    if (!s.wallpaper_path.empty()) {
+        if ((nw + 1) % per_row) ImGui::SameLine(0, 8);
+        if (wallpaper_card("custom", "My image", s.wallpaper == "custom", s, p, wr) && s.wallpaper != "custom") {
+            s.wallpaper = "custom";
+            changed = true;
+        }
+    }
+
+    ImGui::BeginDisabled(ui.picking);
+    if (ImGui::Button(ui.picking ? "Choosing..." : "Choose image...")) ui.pick_image = true;
+    ImGui::EndDisabled();
+    if (!s.wallpaper_path.empty()) {
+        ImGui::SameLine();
+        if (ImGui::Button("Remove image")) {
+            s.wallpaper_path.clear();
+            if (s.wallpaper == "custom") s.wallpaper = "none";
+            changed = true;
+        }
+    }
+    // Typing a path works everywhere, also without zenity/kdialog.
+    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - 70);
+    bool enter = ImGui::InputTextWithHint("##path", "or paste an image path", ui.path, sizeof(ui.path),
+                                          ImGuiInputTextFlags_EnterReturnsTrue);
+    ImGui::SameLine();
+    if ((ImGui::Button("Use", ImVec2(60, 0)) || enter) && ui.path[0]) {
+        s.wallpaper_path = ui.path;
+        s.wallpaper = "custom";
+        ui.path[0] = '\0';
+        changed = true;
+    }
+    const std::string& err = wr.syncCustom(s);
+    if (!err.empty()) {
+        ImGui::PushTextWrapPos(0);
+        ImGui::TextColored(p.danger, "%s", err.c_str());
+        ImGui::PopTextWrapPos();
+    }
+
+    ImGui::BeginDisabled(s.wallpaper == "none");
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextUnformatted("Dim");
+    ImGui::SameLine(140);
+    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
+    float dim_pct = s.dim * 100;
+    if (ImGui::SliderFloat("##dim", &dim_pct, 0, 80, "%.0f%%")) {
+        s.dim = dim_pct / 100;
+        changed = true;
+    }
+    ImGui::EndDisabled();
 
     section("TEXT & LAYOUT");
     static const char* sizes[] = { "small", "medium", "large" };

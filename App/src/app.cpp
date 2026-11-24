@@ -30,7 +30,7 @@ static const char* state_text(ConnState s) {
 App::App(const AutoRun& autorun) : autorun_(autorun), settings_path_(settings_path()) {
     settings_load(settings_, settings_path_);
     applyLook();
-    settings_open_ = autorun_.open_settings;
+    settings_ui_.open = autorun_.open_settings;
     std::snprintf(host_, sizeof(host_), "%s", settings_.host.c_str());
     port_ = settings_.port;
     std::snprintf(name_, sizeof(name_), "%s", settings_.name.c_str());
@@ -46,6 +46,26 @@ App::App(const AutoRun& autorun) : autorun_(autorun), settings_path_(settings_pa
 void App::applyLook() {
     palette_ = resolve_theme(settings_);
     apply_style(palette_, settings_);
+}
+
+// The file dialog is a separate program; run it on a thread so the window
+// keeps drawing (and the connection keeps its heartbeat) meanwhile.
+void App::pollImagePicker() {
+    if (settings_ui_.pick_image && !image_pick_.valid()) {
+        image_pick_ = std::async(std::launch::async, pick_image_file);
+        settings_ui_.picking = true;
+    }
+    settings_ui_.pick_image = false;
+    if (image_pick_.valid() &&
+        image_pick_.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+        std::string path = image_pick_.get();
+        settings_ui_.picking = false;
+        if (!path.empty()) {
+            settings_.wallpaper_path = path;
+            settings_.wallpaper = "custom";
+            look_dirty_ = true;
+        }
+    }
 }
 
 void App::saveSettings() {
@@ -117,13 +137,14 @@ void App::draw() {
     drawIdentityWarning();
     ImGui::End();
 
-    if (draw_settings_window(&settings_open_, settings_, palette_)) look_dirty_ = true;
+    if (draw_settings_window(settings_ui_, settings_, palette_, wallpaper_)) look_dirty_ = true;
+    pollImagePicker();
 }
 
 void App::drawConnectScreen() {
     const float width = 360.0f;
     ImGui::SetCursorPos(ImVec2(ImGui::GetContentRegionMax().x - 90.0f, ImGui::GetStyle().WindowPadding.y));
-    if (ImGui::Button("Settings", ImVec2(90.0f, 0))) settings_open_ = !settings_open_;
+    if (ImGui::Button("Settings", ImVec2(90.0f, 0))) settings_ui_.open = !settings_ui_.open;
     ImVec2 avail = ImGui::GetContentRegionAvail();
     ImGui::SetCursorPos(ImVec2((avail.x - width) * 0.5f, avail.y * 0.25f));
     ImGui::BeginGroup();
@@ -206,7 +227,7 @@ void App::drawStatusBar() {
     ImGui::SetCursorScreenPos(ImVec2(cur.x + ImGui::GetContentRegionAvail().x - 2 * button_w -
                                      ImGui::GetStyle().ItemSpacing.x,
                                      cur.y + (h - ImGui::GetFrameHeight()) / 2));
-    if (ImGui::Button("Settings", ImVec2(button_w, 0))) settings_open_ = !settings_open_;
+    if (ImGui::Button("Settings", ImVec2(button_w, 0))) settings_ui_.open = !settings_ui_.open;
     ImGui::SameLine();
     if (ImGui::Button("Leave", ImVec2(button_w, 0))) leave();
     ImGui::SetCursorScreenPos(ImVec2(cur.x, cur.y + h + 4));
@@ -292,6 +313,7 @@ void App::drawMessages(float height) {
     ImGui::PushStyleColor(ImGuiCol_ChildBg, palette_.bg);
     ImGui::BeginChild("messages", ImVec2(0, height), ImGuiChildFlags_Borders);
     ImGui::PopStyleColor();
+    drawWallpaper();
     // Follow new messages only if the user is already at the bottom, so
     // scrolling up to read history is not interrupted.
     bool at_bottom = ImGui::GetScrollY() >= ImGui::GetScrollMaxY() - 4.0f;
@@ -304,6 +326,21 @@ void App::drawMessages(float height) {
         seen_version_ = v;
     }
     ImGui::EndChild();
+}
+
+void App::drawWallpaper() {
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    ImVec2 p0 = ImGui::GetWindowPos();
+    ImVec2 p1(p0.x + ImGui::GetWindowWidth(), p0.y + ImGui::GetWindowHeight());
+    dl->PushClipRect(p0, p1, false);
+    if (wallpaper_.draw(dl, p0, p1, settings_, palette_)) {
+        // The image is square; paint the panel color over its corners so the
+        // rounded border of the chat area stays rounded, then redraw the border.
+        float r = ImGui::GetStyle().ChildRounding;
+        dl->AddRect(ImVec2(p0.x - 3, p0.y - 3), ImVec2(p1.x + 3, p1.y + 3), to_u32(palette_.panel), r + 3, 0, 6.0f);
+        dl->AddRect(p0, p1, to_u32(palette_.border), r);
+    }
+    dl->PopClipRect();
 }
 
 const char* App::dmTarget() const {

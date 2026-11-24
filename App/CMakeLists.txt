@@ -15,6 +15,7 @@ endif()
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(GLFW REQUIRED IMPORTED_TARGET glfw3)
 find_package(OpenGL REQUIRED)
+find_package(Threads REQUIRED)
 pkg_check_modules(SODIUM REQUIRED IMPORTED_TARGET libsodium)
 
 # Dear ImGui is pinned to a release tag and built from source.
@@ -86,10 +87,11 @@ add_executable(tcp-chat-desktop
   src/chat_view.cpp
   src/settings_ui.cpp
   src/stb_image_impl.cpp
+  src/wallpaper.cpp
 )
 target_include_directories(tcp-chat-desktop PRIVATE ${stb_SOURCE_DIR})
 target_compile_options(tcp-chat-desktop PRIVATE -Wall -Wextra)
-target_link_libraries(tcp-chat-desktop PRIVATE imgui chat_client)
+target_link_libraries(tcp-chat-desktop PRIVATE imgui chat_client Threads::Threads)
 
 # Headless test against a running server: client_smoke <host> <port>
 add_executable(client_smoke tests/client_smoke.cpp)

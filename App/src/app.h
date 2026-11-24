@@ -1,11 +1,14 @@
 // The desktop UI: draws one ImGui frame from ChatClient state.
 #pragma once
 
+#include <future>
 #include <string>
 
 #include "chat_client.h"
 #include "settings.h"
+#include "settings_ui.h"
 #include "theme.h"
+#include "wallpaper.h"
 
 // Optional start-up actions from the command line (also used for automated
 // screenshots).
@@ -44,13 +47,17 @@ private:
 
     void saveSettings();
     void applyLook();   // after any change to the look settings
+    void pollImagePicker();
+    void drawWallpaper();
 
     ChatClient client_;
     AutoRun autorun_;
     Settings settings_;
     std::string settings_path_;
     Palette palette_{};
-    bool settings_open_ = false;
+    SettingsUi settings_ui_;
+    WallpaperRenderer wallpaper_;
+    std::future<std::string> image_pick_;   // file dialog running on a thread
     bool look_dirty_ = false;   // re-apply the style before the next frame
     bool said_ = false;
 
