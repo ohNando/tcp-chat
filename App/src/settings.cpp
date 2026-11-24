@@ -42,6 +42,8 @@ void settings_load(Settings& s, const std::string& path) {
         else if (k == "wallpaper") s.wallpaper = v;
         else if (k == "wallpaper_path") s.wallpaper_path = v;
         else if (k == "dim") s.dim = std::strtof(v.c_str(), nullptr);
+        else if (k == "blur") s.blur = std::strtof(v.c_str(), nullptr);
+        else if (k == "notifications") s.notifications = v == "1";
         else if (k == "font_size") s.font_size = v;
         else if (k == "compact") s.compact = v == "1";
         else if (k == "host") s.host = v;
@@ -49,6 +51,7 @@ void settings_load(Settings& s, const std::string& path) {
         else if (k == "name") s.name = v;
     }
     if (s.dim < 0 || s.dim > 0.8f) s.dim = 0.25f;
+    if (s.blur < 0 || s.blur > 20) s.blur = 0;
     if (s.port <= 0 || s.port > 65535) s.port = 8080;
 }
 
@@ -63,8 +66,10 @@ bool settings_save(const Settings& s, const std::string& path) {
         << "wallpaper=" << s.wallpaper << "\n"
         << "wallpaper_path=" << s.wallpaper_path << "\n"
         << "dim=" << s.dim << "\n"
+        << "blur=" << s.blur << "\n"
         << "font_size=" << s.font_size << "\n"
         << "compact=" << (s.compact ? 1 : 0) << "\n"
+        << "notifications=" << (s.notifications ? 1 : 0) << "\n"
         << "host=" << s.host << "\n"
         << "port=" << s.port << "\n"
         << "name=" << s.name << "\n";

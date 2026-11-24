@@ -7,15 +7,17 @@
 
 struct Settings {
     // Look
-    std::string theme = "midnight";
+    std::string theme;          // "" = follow the system (like the web's "Match system")
     int32_t accent = -1;        // 0xRRGGBB, -1 = the theme's own color
     int32_t own_bubble = -1;
     int32_t other_bubble = -1;
     std::string wallpaper = "none";   // none | dots | grid | waves | bubbles | aurora | dusk | custom
     std::string wallpaper_path;       // image file for "custom"
     float dim = 0.25f;                // 0..0.8 darkening over the wallpaper
+    float blur = 0;                   // 0..20 px, blurs the wallpaper
     std::string font_size = "medium"; // small | medium | large
     bool compact = false;
+    bool notifications = false;       // desktop notifications for DMs and mentions
 
     // Last connection, to prefill the connect screen
     std::string host = "127.0.0.1";
