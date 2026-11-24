@@ -180,6 +180,12 @@ static void handle_message(conn_t* c, const message_t* m) {
             break;
         case FT_PONG:
             break; /* answer to our heartbeat; receiving it is all that matters */
+        case FT_TYPING:
+            message_init(&reply, FT_USER_TYPING);
+            memcpy(reply.name, c->name, sizeof(reply.name));
+            reply.active = m->active ? 1 : 0;
+            room_broadcast(&room, &reply, c); /* everyone but the typist */
+            break;
         case FT_QUIT:
             c->close_after_flush = 1;
             break;

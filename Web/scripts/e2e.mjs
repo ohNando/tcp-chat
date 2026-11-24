@@ -220,6 +220,17 @@ step('live messages are not flagged as history', async () => {
   await bob.waitFor(FT.CHAT)
 })
 
+step('typing notifications reach everybody but the typist', async () => {
+  alice.send({ type: FT.TYPING, active: true })
+  const t = await bob.expect(FT.USER_TYPING)
+  assert.deepEqual([t.name, t.active], ['alice', true])
+  alice.send({ type: FT.TYPING, active: false })
+  assert.equal((await bob.expect(FT.USER_TYPING)).active, false)
+  // alice must not get her own notifications back
+  alice.send({ type: FT.USERS_REQ })
+  assert.equal((await alice.next()).type, FT.USERS)
+})
+
 step('duplicate names are rejected', async () => {
   const carol = new WsClient('carol').connect()
   await carol.expect('established')
