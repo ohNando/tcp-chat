@@ -3,7 +3,9 @@ CC      = gcc
 SODIUM_CFLAGS := $(shell pkg-config --cflags libsodium)
 SODIUM_LIBS   := $(shell pkg-config --libs libsodium)
 
-CFLAGS  = -g -Wall -Wextra -Werror -I./include -MMD -MP $(SODIUM_CFLAGS)
+# Optimize by default; `make OPT=-O0` for step-by-step debugging.
+OPT    ?= -O2
+CFLAGS  = $(OPT) -g -Wall -Wextra -Werror -I./include -MMD -MP $(SODIUM_CFLAGS)
 LDLIBS  = $(SODIUM_LIBS)
 
 # ----- Directories -----
