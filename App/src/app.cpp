@@ -29,6 +29,19 @@ static const char* state_text(ConnState s) {
 
 App::App(const AutoRun& autorun) : autorun_(autorun), settings_path_(settings_path()) {
     settings_load(settings_, settings_path_);
+    if (!autorun_.theme.empty()) settings_.theme = autorun_.theme;
+    if (!autorun_.wallpaper.empty()) {
+        int n;
+        const WallpaperInfo* list = wallpaper_list(&n);
+        bool builtin = autorun_.wallpaper == "none";
+        for (int i = 0; i < n; i++) builtin |= autorun_.wallpaper == list[i].id;
+        if (builtin) {
+            settings_.wallpaper = autorun_.wallpaper;
+        } else {
+            settings_.wallpaper = "custom";
+            settings_.wallpaper_path = autorun_.wallpaper;
+        }
+    }
     applyLook();
     settings_ui_.open = autorun_.open_settings;
     std::snprintf(host_, sizeof(host_), "%s", settings_.host.c_str());

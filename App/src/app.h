@@ -21,6 +21,8 @@ struct AutoRun {
     bool trust = false;
     bool open_settings = false;
     bool open_emoji = false;
+    std::string theme;       // overrides the saved look for this run
+    std::string wallpaper;   // wallpaper id, or an image path
 };
 
 class App {
