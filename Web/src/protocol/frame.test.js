@@ -8,7 +8,7 @@ const roundTrip = (m) => decodeMessage(encodeMessage(m, 7))
 test('header has the same wire layout as the C server', () => {
   const f = encodeMessage({ type: FT.JOIN, name: 'ali' }, 0x01020304)
   assert.deepEqual([...f.subarray(0, FRAME_HEADER_SIZE)],
-    [1, FT.JOIN, 0, 0, 1, 2, 3, 4, 0, 0, 0, 5])
+    [2, FT.JOIN, 0, 0, 1, 2, 3, 4, 0, 0, 0, 5])
   assert.deepEqual([...f.subarray(FRAME_HEADER_SIZE)], [0, 3, 0x61, 0x6c, 0x69])
 })
 
@@ -17,8 +17,8 @@ test('every message type round-trips', () => {
   assert.equal(roundTrip({ type: FT.MSG, text: 'merhaba dünya 😀' }).text, 'merhaba dünya 😀')
   assert.equal(roundTrip({ type: FT.WELCOME, text: 'hi' }).text, 'hi')
 
-  const chat = roundTrip({ type: FT.CHAT, timestamp: 1763900000123, name: 'ali', text: 'selam' })
-  assert.deepEqual([chat.timestamp, chat.name, chat.text, chat.seq], [1763900000123, 'ali', 'selam', 7])
+  const chat = roundTrip({ type: FT.CHAT, id: 99, timestamp: 1763900000123, name: 'ali', text: 'selam' })
+  assert.deepEqual([chat.id, chat.timestamp, chat.name, chat.text, chat.seq], [99, 1763900000123, 'ali', 'selam', 7])
 
   assert.deepEqual(roundTrip({ type: FT.USERS, users: ['a', 'bb'] }).users, ['a', 'bb'])
   const err = roundTrip({ type: FT.ERR, code: ERR.NAME_TAKEN, text: 'taken' })
@@ -81,4 +81,23 @@ test('key and dm messages round-trip', () => {
   assert.deepEqual([...dm.box], [...box])
 
   assert.throws(() => encodeMessage({ type: FT.KEY, key: new Uint8Array(31) }), ProtocolError)
+})
+
+test('history request and end round-trip, with the same bytes as the C codec', () => {
+  const req = encodeMessage({ type: FT.HISTORY_REQ, beforeId: 0x0102, limit: 50 })
+  // header: version 2, type 0x0a, flags 0, rsv 0, seq 0, len 10
+  assert.deepEqual([...req.subarray(0, 12)], [2, 0x0a, 0, 0, 0, 0, 0, 0, 0, 0, 0, 10])
+  assert.deepEqual([...req.subarray(12)], [0, 0, 0, 0, 0, 0, 1, 2, 0, 50])
+  const back = decodeMessage(req)
+  assert.deepEqual([back.beforeId, back.limit], [0x0102, 50])
+
+  const end = decodeMessage(encodeMessage({ type: FT.HISTORY_END, flags: FLAG.HISTORY | FLAG.PAGE, more: true }))
+  assert.equal(end.more, true)
+  assert.equal(end.flags, FLAG.HISTORY | FLAG.PAGE)
+})
+
+test('frames from the old protocol version are refused', () => {
+  const frame = encodeMessage({ type: FT.PING })
+  frame[0] = 1
+  assert.throws(() => decodeMessage(frame), ProtocolError)
 })

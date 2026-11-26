@@ -5,7 +5,8 @@
 //   ver u8 | type u8 | flags u8 | reserved u8 | seq u32 | payload len u32
 // Strings are u16 length + UTF-8 bytes.
 
-export const FRAME_VERSION = 1
+// 2: CHAT carries a message id; HISTORY_REQ / HISTORY_END added.
+export const FRAME_VERSION = 2
 export const FRAME_HEADER_SIZE = 12
 export const FRAME_MAX_PAYLOAD = 64 * 1024
 
@@ -29,6 +30,7 @@ export const FT = Object.freeze({
   TYPING: 0x07,
   KEY: 0x08,
   DM: 0x09,
+  HISTORY_REQ: 0x0a,
   // server -> client
   WELCOME: 0x81,
   CHAT: 0x82,
@@ -39,12 +41,17 @@ export const FT = Object.freeze({
   USER_TYPING: 0x87,
   PEER_KEY: 0x88,
   DM_RECV: 0x89,
+  HISTORY_END: 0x8a,
 })
 
 // Frame flags (header byte 2). Unknown flags are ignored.
 export const FLAG = Object.freeze({
   HISTORY: 0x01, // CHAT replayed from history, not live
+  PAGE: 0x02, // CHAT answering a HISTORY_REQ (an older page)
 })
+
+// At most this many messages per history page (Backend STORE_PAGE_MAX).
+export const HISTORY_PAGE_MAX = 100
 
 export const ERR = Object.freeze({
   PROTOCOL: 1,
@@ -180,6 +187,7 @@ function writePayload(w, m) {
       w.str(m.text, TEXT_MAX_LEN)
       break
     case FT.CHAT:
+      w.u64(m.id ?? 0)
       w.u64(m.timestamp)
       w.str(m.name, NAME_MAX_LEN)
       w.str(m.text, TEXT_MAX_LEN)
@@ -217,6 +225,13 @@ function writePayload(w, m) {
       w.str(m.to, NAME_MAX_LEN)
       writeBox(w, m)
       break
+    case FT.HISTORY_REQ:
+      w.u64(m.beforeId ?? 0)
+      w.u16(m.limit)
+      break
+    case FT.HISTORY_END:
+      w.u8(m.more ? 1 : 0)
+      break
     case FT.USERS_REQ:
     case FT.QUIT:
     case FT.PING:
@@ -240,6 +255,7 @@ function readPayload(r, type) {
       m.text = r.str(TEXT_MAX_LEN)
       break
     case FT.CHAT:
+      m.id = Number(r.u64()) // 0 = the server could not store it
       m.timestamp = Number(r.u64())
       m.name = r.str(NAME_MAX_LEN)
       m.text = r.str(TEXT_MAX_LEN)
@@ -278,6 +294,13 @@ function readPayload(r, type) {
       m.name = r.str(NAME_MAX_LEN)
       m.to = r.str(NAME_MAX_LEN)
       readBox(r, m)
+      break
+    case FT.HISTORY_REQ:
+      m.beforeId = Number(r.u64())
+      m.limit = r.u16()
+      break
+    case FT.HISTORY_END:
+      m.more = r.u8() !== 0
       break
     default:
       break
