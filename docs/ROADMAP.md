@@ -1,9 +1,11 @@
 # Roadmap
 
-Where the project stands and what could come next. **Help is welcome:** if
-you would like to work on one of the open items, open an issue first (or
-comment on an existing one) so we can agree on the approach, then send a
-pull request to `develop`. See [CONTRIBUTING.md](../CONTRIBUTING.md).
+Where the project stands and what could come next. **Help is welcome:** every
+item below has an issue with the options we considered. Comment on it before
+you start, so we can agree on the approach, then send a pull request to
+`develop`. Items labeled
+[good first issue](https://github.com/ohNando/tcp-chat/labels/good%20first%20issue)
+are a gentle start. See [CONTRIBUTING.md](../CONTRIBUTING.md).
 
 ## Done
 
@@ -22,38 +24,38 @@ pull request to `develop`. See [CONTRIBUTING.md](../CONTRIBUTING.md).
 
 ### Core
 
-1. [ ] **Persistent history:** store messages on disk (SQLite or an
+1. [ ] [#1](https://github.com/ohNando/tcp-chat/issues/1) **Persistent history:** store messages on disk (SQLite or an
        append-only log) so they survive a server restart; load older messages
        when the user scrolls up. Stable message IDs are the base for replies,
        reactions, edits and search.
-2. [ ] **Rooms / channels:** `#general`, `#games`, …; a room list in the
+2. [ ] [#2](https://github.com/ohNando/tcp-chat/issues/2) **Rooms / channels:** `#general`, `#games`, …; a room list in the
        sidebar, unread count per room. Needs protocol and server changes.
-3. [ ] **Name ownership:** bind a name to the user's device key (already used
+3. [ ] [#3](https://github.com/ohNando/tcp-chat/issues/3) **Name ownership:** bind a name to the user's device key (already used
        for DMs) so nobody else can join under that name.
 
 ### Messaging
 
-4. [ ] Replies (quote a message) and reactions (👍 ❤️ 😂).
-5. [ ] Edit and delete messages.
-6. [ ] File and image sharing: encrypted, sent in chunks, image previews.
-7. [ ] Light formatting: `**bold**`, `` `code` ``, clickable links.
-8. [ ] Delivered / read marks for DMs.
-9. [ ] Search in messages.
+4. [ ] [#4](https://github.com/ohNando/tcp-chat/issues/4) Replies (quote a message) and reactions (👍 ❤️ 😂).
+5. [ ] [#5](https://github.com/ohNando/tcp-chat/issues/5) Edit and delete messages.
+6. [ ] [#6](https://github.com/ohNando/tcp-chat/issues/6) File and image sharing: encrypted, sent in chunks, image previews.
+7. [ ] [#7](https://github.com/ohNando/tcp-chat/issues/7) Light formatting: `**bold**`, `` `code` ``, clickable links.
+8. [ ] [#8](https://github.com/ohNando/tcp-chat/issues/8) Delivered / read marks for DMs.
+9. [ ] [#9](https://github.com/ohNando/tcp-chat/issues/9) Search in messages.
 
 ### Security
 
-10. [ ] **End-to-end encrypted rooms** (group keys, e.g. sender keys) so the
+10. [ ] [#10](https://github.com/ohNando/tcp-chat/issues/10) **End-to-end encrypted rooms** (group keys, e.g. sender keys) so the
         server cannot read room messages either. Today only DMs are
         end-to-end encrypted. The largest and most careful piece of work:
         please discuss the design in an issue before writing code.
-11. [ ] Moderation (kick, mute) and flood protection.
+11. [ ] [#11](https://github.com/ohNando/tcp-chat/issues/11) Moderation (kick, mute) and flood protection.
 
 ### Distribution
 
-12. [ ] Packages: AppImage or Flatpak for the desktop app, a Docker image for
+12. [ ] [#12](https://github.com/ohNando/tcp-chat/issues/12) Packages: AppImage or Flatpak for the desktop app, a Docker image for
         the server, release builds attached to GitHub Releases.
-13. [ ] Installable web app (PWA) with notifications on phones.
-14. [ ] Windows and macOS builds of the desktop client in CI (the server
+13. [ ] [#13](https://github.com/ohNando/tcp-chat/issues/13) Installable web app (PWA) with notifications on phones.
+14. [ ] [#14](https://github.com/ohNando/tcp-chat/issues/14) Windows and macOS builds of the desktop client in CI (the server
         stays Linux-only because it uses epoll).
 
 ## Known limits
