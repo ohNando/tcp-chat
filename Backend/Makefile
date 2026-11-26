@@ -25,7 +25,7 @@ BENCH_BIN  = $(BIN_DIR)/bench
 # ----- Objects -----
 COMMON_OBJ = $(OBJ_DIR)/utility.o $(OBJ_DIR)/network.o
 PROTO_OBJ  = $(OBJ_DIR)/bytebuf.o $(OBJ_DIR)/frame.o $(OBJ_DIR)/framer.o $(OBJ_DIR)/message.o $(OBJ_DIR)/validate.o
-CORE_OBJ   = $(OBJ_DIR)/conn.o $(OBJ_DIR)/room.o $(OBJ_DIR)/store.o
+CORE_OBJ   = $(OBJ_DIR)/conn.o $(OBJ_DIR)/room.o $(OBJ_DIR)/store.o $(OBJ_DIR)/ratelimit.o
 WEB_OBJ    = $(OBJ_DIR)/sha1.o $(OBJ_DIR)/http.o $(OBJ_DIR)/ws.o
 CRYPTO_OBJ = $(OBJ_DIR)/config.o $(OBJ_DIR)/identity.o $(OBJ_DIR)/handshake.o $(OBJ_DIR)/secure.o $(OBJ_DIR)/known_servers.o $(OBJ_DIR)/dm.o
 SERVER_OBJ = $(OBJ_DIR)/server.o $(COMMON_OBJ) $(PROTO_OBJ) $(CORE_OBJ) $(CRYPTO_OBJ) $(WEB_OBJ)
