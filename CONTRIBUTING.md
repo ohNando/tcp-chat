@@ -2,7 +2,8 @@
 
 Thanks for your interest! This is a learning project, so clear code and
 explanations matter as much as features. Small, focused pull requests are
-easiest to review.
+easiest to review. Everyone taking part is expected to follow the
+[Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## What to work on
 
