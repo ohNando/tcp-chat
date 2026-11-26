@@ -3,6 +3,7 @@
 #include "server.h"
 #include "identity.h"
 #include "network.h"
+#include "store.h"
 #include "utility.h"
 #include "validate.h"
 #include "http.h"
@@ -29,6 +30,8 @@ static size_t max_members = SERVER_DEFAULT_MAX_CLIENTS;
 static uint64_t idle_timeout_ms = SERVER_DEFAULT_IDLE_TIMEOUT_S * 1000u;
 static char web_root[PATH_MAX];   /* resolved; empty = no static files */
 static room_t room;
+static store_t store;
+static uint64_t last_prune_ms;
 static int next_conn_id = 1;
 
 static uint64_t now_ms(void) {
@@ -56,41 +59,39 @@ static void protocol_error(conn_t* c, const char* why) {
 /* ---------------------------------------------------------------- */
 
 /* ---------------------------------------------------------------- */
-/* Recent history: a ring buffer of the last SERVER_HISTORY_MAX chats */
+/* History: kept in SQLite (store.c), sent in pages                  */
 /* ---------------------------------------------------------------- */
 
 typedef struct {
-    uint64_t timestamp;
-    char name[NAME_MAX_LEN + 1];
-    char text[TEXT_MAX_LEN + 1];
-} history_entry_t;
+    conn_t* to;
+    uint8_t flags;
+} history_ctx_t;
 
-static history_entry_t history[SERVER_HISTORY_MAX];
-static size_t history_next;   /* slot the next message goes into */
-static size_t history_count;
-
-static void history_add(const message_t* chat) {
-    history_entry_t* e = &history[history_next];
-    e->timestamp = chat->timestamp;
-    memcpy(e->name, chat->name, sizeof(e->name));
-    memcpy(e->text, chat->text, sizeof(e->text));
-    history_next = (history_next + 1) % SERVER_HISTORY_MAX;
-    if (history_count < SERVER_HISTORY_MAX) history_count++;
+static void send_stored(void* ctx, const stored_message_t* sm) {
+    history_ctx_t* h = ctx;
+    message_t m;
+    message_init(&m, FT_CHAT);
+    m.flags = h->flags;
+    m.id = sm->id;
+    m.timestamp = sm->timestamp;
+    memcpy(m.name, sm->name, sizeof(m.name));
+    memcpy(m.text, sm->text, sizeof(m.text));
+    room_send_to(h->to, &m);
 }
 
-/* Replays the history to one connection, oldest first. */
-static void history_send(conn_t* c) {
-    message_t m;
-    size_t oldest = (history_next + SERVER_HISTORY_MAX - history_count) % SERVER_HISTORY_MAX;
-    for (size_t i = 0; i < history_count; i++) {
-        const history_entry_t* e = &history[(oldest + i) % SERVER_HISTORY_MAX];
-        message_init(&m, FT_CHAT);
-        m.flags = FLAG_HISTORY;
-        m.timestamp = e->timestamp;
-        memcpy(m.name, e->name, sizeof(m.name));
-        memcpy(m.text, e->text, sizeof(m.text));
-        room_send_to(c, &m);
-    }
+/* Sends up to `limit` messages older than `before_id` (0 = the newest),
+ * oldest first, then HISTORY_END telling whether even older ones exist.
+ * `page` marks an answer to HISTORY_REQ, as opposed to the join replay. */
+static void history_send(conn_t* c, uint64_t before_id, int limit, int page) {
+    history_ctx_t ctx = { c, (uint8_t)(FLAG_HISTORY | (page ? FLAG_PAGE : 0)) };
+    int more = 0;
+    store_page(&store, before_id, limit, send_stored, &ctx, &more);
+
+    message_t end;
+    message_init(&end, FT_HISTORY_END);
+    end.flags = ctx.flags;
+    end.more = (uint8_t)more;
+    room_send_to(c, &end);
 }
 
 static void handle_name(conn_t* c, const message_t* in) {
@@ -119,7 +120,7 @@ static void handle_name(conn_t* c, const message_t* in) {
     log_info("conn %d registered as '%s'", c->id, c->name);
 
     /* Past messages first: the welcome line then separates old from new. */
-    history_send(c);
+    history_send(c, 0, SERVER_HISTORY_MAX, 0);
 
     message_t m;
     message_init(&m, FT_WELCOME);
@@ -157,11 +158,12 @@ static void handle_chat(conn_t* c, const message_t* in) {
     out.timestamp = now_ms();
     memcpy(out.name, c->name, sizeof(out.name));
     memcpy(out.text, in->text, sizeof(out.text));
+    /* Saved first, so the broadcast carries the stored id. */
+    out.id = store_add(&store, out.timestamp, out.name, out.text);
 
     /* Sender included: the server is the single source of truth, so
      * clients render their own messages only when they come back. */
     room_broadcast(&room, &out, NULL);
-    history_add(&out);
 }
 
 /* Stores the member's public DM key and announces it to everybody else. */
@@ -243,6 +245,9 @@ static void handle_message(conn_t* c, const message_t* m) {
             memcpy(reply.name, c->name, sizeof(reply.name));
             reply.active = m->active ? 1 : 0;
             room_broadcast(&room, &reply, c); /* everyone but the typist */
+            break;
+        case FT_HISTORY_REQ:
+            history_send(c, m->id, m->limit ? m->limit : SERVER_HISTORY_MAX, 1);
             break;
         case FT_QUIT:
             c->close_after_flush = 1;
@@ -719,9 +724,19 @@ static void check_timeouts(void) {
     }
 }
 
+/* Old messages are deleted once an hour (when a retention is set). */
+static void prune_history(void) {
+    uint64_t now = now_ms();
+    if (now - last_prune_ms < 3600u * 1000u) return;
+    last_prune_ms = now;
+    int n = store_prune(&store, now);
+    if (n > 0) log_info("deleted %d message(s) past the retention period", n);
+}
+
 static void sweep(void) {
     int again;
     check_timeouts();
+    prune_history();
     do {
         again = 0;
         for (size_t i = 0; i < room.max; i++) {
@@ -815,14 +830,17 @@ static void run(void) {
 static void usage(const char* prog) {
     fprintf(stderr,
             "Usage: %s [-p port] [-w ws_port] [-d web_root] [-m max_clients] [-k key_file] [-t seconds]\n"
+            "          [-s history_db] [-H days]\n"
             "  -p  TCP port to listen on (default %d)\n"
             "  -w  HTTP/WebSocket port, 0 to disable (default %d)\n"
             "  -d  directory with the web client to serve over HTTP (default: none)\n"
             "  -m  maximum simultaneous clients, 1-%d (default %d)\n"
             "  -k  server identity key, created if missing (default %s)\n"
-            "  -t  drop connections silent for this long, pinging them first (default %d)\n",
+            "  -t  drop connections silent for this long, pinging them first (default %d)\n"
+            "  -s  message history database, created if missing; :memory: keeps it in RAM (default %s)\n"
+            "  -H  delete messages older than this many days, 0 = keep forever (default 0)\n",
             prog, SERVER_DEFAULT_PORT, SERVER_DEFAULT_WS_PORT, USERS_MAX, SERVER_DEFAULT_MAX_CLIENTS,
-            IDENTITY_DEFAULT_PATH, SERVER_DEFAULT_IDLE_TIMEOUT_S);
+            IDENTITY_DEFAULT_PATH, SERVER_DEFAULT_IDLE_TIMEOUT_S, SERVER_DEFAULT_HISTORY_DB);
 }
 
 /* Parses a decimal integer in [min, max]; returns -1 if invalid. */
@@ -839,9 +857,11 @@ int main(int argc, char** argv) {
     int ws_port = SERVER_DEFAULT_WS_PORT;
     int max_clients = SERVER_DEFAULT_MAX_CLIENTS;
     const char* key_path = IDENTITY_DEFAULT_PATH;
+    const char* history_db = SERVER_DEFAULT_HISTORY_DB;
+    int retention_days = 0;
     int opt;
 
-    while ((opt = getopt(argc, argv, "p:w:d:m:k:t:h")) != -1) {
+    while ((opt = getopt(argc, argv, "p:w:d:m:k:t:s:H:h")) != -1) {
         long v;
         switch (opt) {
             case 'p':
@@ -882,6 +902,16 @@ int main(int argc, char** argv) {
             case 'k':
                 key_path = optarg;
                 break;
+            case 's':
+                history_db = optarg;
+                break;
+            case 'H':
+                if ((v = parse_int(optarg, 0, 36500)) < 0) {
+                    fprintf(stderr, "invalid history retention: %s\n", optarg);
+                    return 1;
+                }
+                retention_days = (int)v;
+                break;
             default:
                 usage(argv[0]);
                 return opt == 'h' ? 0 : 1;
@@ -904,6 +934,10 @@ int main(int argc, char** argv) {
     char fp[FINGERPRINT_STR_LEN];
     identity_fingerprint(identity.pk, fp);
     log_info("server fingerprint: %s", fp);
+
+    if (store_open(&store, history_db, retention_days) < 0) return 1;
+    log_info("message history in %s%s", history_db, retention_days ? "" : " (kept forever)");
+    prune_history();
 
     /* Extra slots let clients beyond the limit finish the handshake and
      * receive a proper (encrypted) "room full" error. */
@@ -954,6 +988,7 @@ int main(int argc, char** argv) {
     run();
 
     close_all();
+    store_close(&store);
     close(sigsrc.fd);
     close(epfd);
     close(listener.fd);

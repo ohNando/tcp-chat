@@ -30,7 +30,9 @@
  * one silent for the whole timeout is considered dead (pulled cable,
  * suspended laptop: TCP alone would keep it "open" forever). */
 #define SERVER_DEFAULT_IDLE_TIMEOUT_S 75
-/* Recent CHAT messages replayed to people who join (FLAG_HISTORY). */
+/* Recent CHAT messages replayed to people who join (FLAG_HISTORY); older
+ * ones are fetched page by page with HISTORY_REQ. */
 #define SERVER_HISTORY_MAX 50
+#define SERVER_DEFAULT_HISTORY_DB "chat.db"
 
 #endif
