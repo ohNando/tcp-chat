@@ -19,3 +19,8 @@ node_modules/
 # Editors
 .vscode/
 .idea/
+
+# Message history created by the server
+chat.db
+chat.db-wal
+chat.db-shm
