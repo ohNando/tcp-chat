@@ -3,3 +3,6 @@ contact_links:
   - name: Report a security vulnerability
     url: https://github.com/ohNando/tcp-chat/security/advisories/new
     about: Please report security issues privately, not as public issues.
+  - name: Ask a question
+    url: https://github.com/ohNando/tcp-chat/discussions
+    about: Questions and ideas are welcome in Discussions.
