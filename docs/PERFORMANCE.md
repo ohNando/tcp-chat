@@ -75,3 +75,23 @@ fewer system calls (batching writes per loop turn, or `io_uring`).
 
 In the slow-readers scenario the user time is higher (18 %) because the
 messages are 2 KB: that is XChaCha20-Poly1305 encrypting about 100 MB/s.
+
+### Message history in SQLite
+
+Since 0.5 the server writes every room message to SQLite (WAL mode,
+`synchronous=NORMAL`) before broadcasting it, on the event-loop thread.
+Writing each message in its own transaction hurt the tail latency badly:
+
+| Scenario | Before history (p99 / max) | One commit per message | One commit per loop turn |
+|---|---|---|---|
+| light | 0.68 / 1.58 ms | 1.30 / 2.97 ms | 0.36 / 0.64 ms |
+| heavy | 2.97–6.27 / 5.97–9.05 ms | 11.24 / 15.55 ms | 1.30 / 2.54 ms |
+| slow readers | 0.51 / 1.79 ms | 6.18 / 19.42 ms | 0.53 / 1.00 ms |
+
+All columns were measured on the same machine on the same day; the
+"before" column is two runs of the previous version, which shows how noisy
+the heavy scenario is. The fix (`store_flush()` in `sweep()`) opens a
+transaction at the first message of a loop turn and commits once at its
+end: a turn that handles 30 messages does one commit instead of 30. Ids are
+still assigned immediately, and a crash can lose at most the messages of
+the current turn.

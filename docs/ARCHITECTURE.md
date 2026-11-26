@@ -96,6 +96,7 @@ proper (encrypted) "room full" error.
 | `server.c` | event loop, message handlers, HTTP and WebSocket handling |
 | `conn.c` | one connection: input framer, output buffer, `sendfile` streaming |
 | `room.c` | member table, name lookup, broadcast, user list |
+| `store.c` | message history in SQLite: stable ids, pages of older messages, retention; one commit per loop turn |
 | `framer.c` | cuts a byte stream into length-prefixed records |
 | `bytebuf.c` | bounds-checked big-endian reader/writer |
 | `frame.c` / `message.c` | frame header and typed message codec |
