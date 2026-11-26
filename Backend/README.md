@@ -14,13 +14,14 @@ The chat server and the terminal client, written in C (C11, POSIX).
 - Linux (uses `epoll`, `signalfd`, `sendfile`)
 - GCC or Clang, GNU Make, `pkg-config`
 - libsodium development files
+- SQLite 3 development files (the server keeps message history in it)
 - valgrind (optional, for `make memcheck`)
 
 ```bash
 # Fedora
-sudo dnf install gcc make pkgconf-pkg-config libsodium-devel valgrind
+sudo dnf install gcc make pkgconf-pkg-config libsodium-devel sqlite-devel valgrind
 # Debian / Ubuntu
-sudo apt install build-essential pkg-config libsodium-dev valgrind
+sudo apt install build-essential pkg-config libsodium-dev libsqlite3-dev valgrind
 ```
 
 ## Build

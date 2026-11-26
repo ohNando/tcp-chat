@@ -83,7 +83,7 @@ More in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Quick start
 
-Requirements: Linux, GCC, Make, libsodium, Node.js 22 (web client), CMake
+Requirements: Linux, GCC, Make, libsodium, SQLite, Node.js 22 (web client), CMake
 and GLFW (desktop app). Per-component details are in each README.
 
 ```bash

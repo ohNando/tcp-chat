@@ -2,11 +2,15 @@
 CC      = gcc
 SODIUM_CFLAGS := $(shell pkg-config --cflags libsodium)
 SODIUM_LIBS   := $(shell pkg-config --libs libsodium)
+SQLITE_CFLAGS := $(shell pkg-config --cflags sqlite3)
+SQLITE_LIBS   := $(shell pkg-config --libs sqlite3)
 
 # Optimize by default; `make OPT=-O0` for step-by-step debugging.
 OPT    ?= -O2
-CFLAGS  = $(OPT) -g -Wall -Wextra -Werror -I./include -MMD -MP $(SODIUM_CFLAGS)
+CFLAGS  = $(OPT) -g -Wall -Wextra -Werror -I./include -MMD -MP $(SODIUM_CFLAGS) $(SQLITE_CFLAGS)
 LDLIBS  = $(SODIUM_LIBS)
+# Only the server stores messages; the clients do not need SQLite.
+SERVER_LDLIBS = $(LDLIBS) $(SQLITE_LIBS)
 
 # ----- Directories -----
 SRC_DIR = src
@@ -21,7 +25,7 @@ BENCH_BIN  = $(BIN_DIR)/bench
 # ----- Objects -----
 COMMON_OBJ = $(OBJ_DIR)/utility.o $(OBJ_DIR)/network.o
 PROTO_OBJ  = $(OBJ_DIR)/bytebuf.o $(OBJ_DIR)/frame.o $(OBJ_DIR)/framer.o $(OBJ_DIR)/message.o $(OBJ_DIR)/validate.o
-CORE_OBJ   = $(OBJ_DIR)/conn.o $(OBJ_DIR)/room.o
+CORE_OBJ   = $(OBJ_DIR)/conn.o $(OBJ_DIR)/room.o $(OBJ_DIR)/store.o
 WEB_OBJ    = $(OBJ_DIR)/sha1.o $(OBJ_DIR)/http.o $(OBJ_DIR)/ws.o
 CRYPTO_OBJ = $(OBJ_DIR)/config.o $(OBJ_DIR)/identity.o $(OBJ_DIR)/handshake.o $(OBJ_DIR)/secure.o $(OBJ_DIR)/known_servers.o $(OBJ_DIR)/dm.o
 SERVER_OBJ = $(OBJ_DIR)/server.o $(COMMON_OBJ) $(PROTO_OBJ) $(CORE_OBJ) $(CRYPTO_OBJ) $(WEB_OBJ)
@@ -57,7 +61,7 @@ $(OBJ_DIR)/%.o: $(SRC_DIR)/%.c | $(OBJ_DIR)
 	$(CC) $(CFLAGS) -c $< -o $@
 
 $(SERVER_BIN): $(SERVER_OBJ) | $(BIN_DIR)
-	$(CC) -o $@ $^ $(LDLIBS)
+	$(CC) -o $@ $^ $(SERVER_LDLIBS)
 
 $(CLIENT_BIN): $(CLIENT_OBJ) | $(BIN_DIR)
 	$(CC) -o $@ $^ $(LDLIBS)
@@ -67,7 +71,7 @@ $(BENCH_BIN): tools/bench.c $(PROTO_OBJ) $(CRYPTO_OBJ) | $(BIN_DIR)
 	$(CC) $(CFLAGS) -o $@ $< $(PROTO_OBJ) $(CRYPTO_OBJ) $(LDLIBS)
 
 $(TEST_BIN_DIR)/%: $(TEST_DIR)/%.c $(MODULE_OBJ) | $(TEST_BIN_DIR)
-	$(CC) $(CFLAGS) -I./$(TEST_DIR) -o $@ $< $(MODULE_OBJ) $(LDLIBS)
+	$(CC) $(CFLAGS) -I./$(TEST_DIR) -o $@ $< $(MODULE_OBJ) $(SERVER_LDLIBS)
 
 test: $(TEST_BINS)
 	@status=0; for t in $(TEST_BINS); do echo "$$t"; ./$$t || status=1; done; exit $$status

@@ -19,7 +19,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install dependencies
-        run: sudo apt-get update && sudo apt-get install -y libsodium-dev valgrind
+        run: sudo apt-get update && sudo apt-get install -y libsodium-dev libsqlite3-dev valgrind
       - name: Build
         run: make -C Backend
       - name: Unit tests
@@ -40,8 +40,8 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: Web/package-lock.json
-      - name: Install libsodium
-        run: sudo apt-get update && sudo apt-get install -y libsodium-dev
+      - name: Install libsodium and SQLite
+        run: sudo apt-get update && sudo apt-get install -y libsodium-dev libsqlite3-dev
       - name: Build the server for the end-to-end test
         run: make -C ../Backend
       - run: npm ci
@@ -61,7 +61,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake pkg-config libsodium-dev libglfw3-dev libgl-dev
+          sudo apt-get install -y cmake pkg-config libsodium-dev libsqlite3-dev libglfw3-dev libgl-dev
       - name: Configure
         run: cmake -S App -B App/build
       - name: Build
