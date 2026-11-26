@@ -37,6 +37,10 @@ Only the latest commit on `main` is supported.
 
 - **Room messages are not end-to-end encrypted.** The server sees every
   room message in plaintext; only private messages are end-to-end encrypted.
+- **Room history is stored unencrypted on the server** (`chat.db`, SQLite),
+  so anyone with access to the server's disk can read past room messages.
+  Use `-H days` to delete old messages, or `-s :memory:` to keep none on
+  disk. Private messages are never stored.
 - **Private messages have no forward secrecy.** They use long-term keys:
   whoever steals a user's key file can decrypt that user's past DMs if they
   also recorded the traffic.

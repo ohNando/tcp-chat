@@ -39,6 +39,9 @@ same as each other.
   privately. DMs are sealed with each user's own key (`crypto_box`); the
   server only relays ciphertext, and a safety number lets two people check
   that nobody swapped their keys.
+- **History that stays.** Room messages are kept in SQLite on the server,
+  so newcomers see the last 50 and anyone can scroll back further, also
+  after a server restart.
 - **Resilient.** A heartbeat drops dead peers, and the web and desktop
   clients reconnect on their own.
 
@@ -127,8 +130,9 @@ What the encryption protects, and what it does not:
   one the server prints when it starts.
 - **Room messages are not end-to-end encrypted.** The server decrypts every
   room message and re-encrypts it for each recipient, so whoever runs the
-  server can read the room. **Private messages are end-to-end encrypted**:
-  the server only relays them and cannot read them.
+  server can read the room. Room history is also kept on the server's disk
+  (`chat.db`). **Private messages are end-to-end encrypted**: the server
+  only relays them, cannot read them and never stores them.
 - The web client is served over plain HTTP. That is fine on `localhost`;
   over a network, put it behind HTTPS.
 - There are no user accounts or passwords: names are first come, first
