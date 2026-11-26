@@ -30,6 +30,8 @@ static int line_overflow = 0;
 static int stdin_eof = 0;
 
 static char my_name[NAME_MAX_LEN + 1];
+static uint64_t oldest_id;  /* oldest message shown, for /history */
+static uint8_t history_more; /* the server has messages older than oldest_id */
 static int use_color = 0;
 static char hostport[300];
 
@@ -301,8 +303,15 @@ static void handle_server_message(message_t* m) {
         case FT_DM_RECV:
             on_dm(m);
             break;
+        case FT_HISTORY_END:
+            /* Our /history request ran out of older messages. */
+            if ((m->flags & FLAG_PAGE) && !m->more) show("%s* that was the beginning of the chat%s", C_INFO, C_RESET);
+            history_more = m->more;
+            break;
         case FT_CHAT: {
             char stamp[8];
+            /* Remember the oldest message we have seen, for /history. */
+            if ((m->flags & FLAG_HISTORY) && m->id && (!oldest_id || m->id < oldest_id)) oldest_id = m->id;
             time_t t = (time_t)(m->timestamp / 1000);
             struct tm tm;
             localtime_r(&t, &tm);
@@ -434,6 +443,19 @@ static int handle_line(const char* line) {
             return send_message(&m);
         }
         if (strncmp(line, "/msg ", 5) == 0) return send_dm(line + 5);
+        if (strcmp(line, "/history") == 0) {
+            if (!history_more) {
+                show("%s* no earlier messages%s", C_INFO, C_RESET);
+                return 0;
+            }
+            /* The terminal cannot insert above what is printed, so older
+             * messages come out here, under a heading. */
+            show("%s* earlier messages:%s", C_INFO, C_RESET);
+            message_init(&m, FT_HISTORY_REQ);
+            m.id = oldest_id;
+            m.limit = 20;
+            return send_message(&m);
+        }
         if (strncmp(line, "/safety ", 8) == 0) {
             show_safety(line + 8);
             return 0;
@@ -442,6 +464,7 @@ static int handle_line(const char* line) {
             show("* Commands: /users               list online users\n"
                  "*           /msg <name> <text>   end-to-end encrypted private message\n"
                  "*           /safety <name>       safety number to compare with <name>\n"
+                 "*           /history             show 20 earlier messages\n"
                  "*           /quit                leave the chat\n"
                  "*           /help                show this help");
             return 0;
