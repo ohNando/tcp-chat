@@ -70,7 +70,7 @@ jobs:
         run: |
           make -C Backend
           cd "$(mktemp -d)"
-          "$GITHUB_WORKSPACE/Backend/bin/server" -p 18080 -w 0 &
+          "$GITHUB_WORKSPACE/Backend/bin/server" -p 18080 -w 0 -r 100 &
           sleep 1
           "$GITHUB_WORKSPACE/App/build/client_smoke" 127.0.0.1 18080
           kill %1

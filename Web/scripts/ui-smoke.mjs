@@ -26,7 +26,8 @@ if (!existsSync(join(DIST, 'index.html'))) {
 }
 
 const work = mkdtempSync(join(tmpdir(), 'tcpchat-ui-'))
-const server = spawn(SERVER, ['-p', String(WS_PORT + 1000), '-w', String(WS_PORT), '-d', DIST],
+// A high rate limit: the test sends 60 messages in a row.
+const server = spawn(SERVER, ['-p', String(WS_PORT + 1000), '-w', String(WS_PORT), '-d', DIST, '-r', '100'],
                      { cwd: work })
 let log = ''
 server.stdout.on('data', (d) => { log += d })

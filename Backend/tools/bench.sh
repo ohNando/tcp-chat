@@ -11,7 +11,7 @@ trap 'rm -rf "$WORK"' EXIT
 run() {
     local title=$1; shift
     echo "== $title  (bench $*)"
-    (cd "$WORK" && exec "$OLDPWD/bin/server" -p "$PORT" -w 0 -m 256 >/dev/null 2>&1) &
+    (cd "$WORK" && exec "$OLDPWD/bin/server" -p "$PORT" -w 0 -m 256 -r 0 >/dev/null 2>&1) &
     local pid=$!
     sleep 0.3
     ./bin/bench "$@" -P "$pid" 127.0.0.1 "$PORT" | sed 's/^/   /' || true
