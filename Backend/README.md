@@ -51,6 +51,8 @@ make run-server
 | `-m` | `64` | maximum number of members, 1–256 |
 | `-k` | `server_identity.key` | identity key file, created on first start |
 | `-t` | `75` | idle timeout in seconds: silent connections are pinged, then dropped |
+| `-s` | `chat.db` | message history database (SQLite), created on first start; `:memory:` keeps it only while the server runs |
+| `-H` | `0` | delete room messages older than this many days; `0` keeps them forever |
 
 `make run-server` passes `-d ../Web/dist` automatically if the web client
 has been built (`npm run build` in `Web`).
@@ -67,6 +69,11 @@ them to be sure you are talking to the right server. Keep
 `server_identity.key` private (it is created with mode `0600` and is
 ignored by git). Deleting it gives the server a new identity, and every
 client will then warn that the key changed.
+
+Room messages are kept in `chat.db` (and its `-wal` / `-shm` companions)
+in the directory the server runs in: people who join later see the last 50
+and can scroll back further. Private messages are never stored. Delete the
+file to start with an empty history.
 
 Stop the server with Ctrl+C; it closes all connections and exits cleanly.
 
@@ -96,6 +103,7 @@ Type a name, then chat. Commands:
 | `/users` | list online users |
 | `/msg <name> <text>` | end-to-end encrypted private message |
 | `/safety <name>` | safety number to compare with that person |
+| `/history` | show 20 earlier messages (repeat for more) |
 | `/quit` | leave the chat |
 | `/help` | show the commands |
 
