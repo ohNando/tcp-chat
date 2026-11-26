@@ -32,18 +32,29 @@ const workDir = mkdtempSync(join(tmpdir(), 'tcpchat-e2e-'))
 // A short idle timeout (pings after 1.2 s, drops after 3 s) lets the
 // heartbeat be tested quickly.
 const IDLE_TIMEOUT_S = 3
-const server = spawn(SERVER, ['-p', String(TCP_PORT), '-w', String(WS_PORT), '-t', String(IDLE_TIMEOUT_S)],
-                     { cwd: workDir })
+let server
 let serverLog = ''
-const serverFingerprint = await new Promise((resolve, reject) => {
-  server.on('error', reject)
-  server.stdout.on('data', (d) => {
-    serverLog += d
-    const fp = serverLog.match(/server fingerprint: (\S+)/)
-    if (fp && serverLog.includes('http/websocket on port')) resolve(fp[1])
+// Started again later in the same directory: same key, same history file.
+function startServer() {
+  server = spawn(SERVER, ['-p', String(TCP_PORT), '-w', String(WS_PORT), '-t', String(IDLE_TIMEOUT_S)],
+                 { cwd: workDir })
+  const startedAt = serverLog.length
+  return new Promise((resolve, reject) => {
+    server.on('error', reject)
+    server.stdout.on('data', (d) => {
+      serverLog += d
+      const log = serverLog.slice(startedAt)
+      const fp = log.match(/server fingerprint: (\S+)/)
+      if (fp && log.includes('listening on port')) resolve(fp[1])
+    })
+    setTimeout(() => reject(new Error('server did not start:\n' + serverLog)), 5000)
   })
-  setTimeout(() => reject(new Error('server did not start:\n' + serverLog)), 5000)
-})
+}
+async function stopServer() {
+  server.kill('SIGINT')
+  await new Promise((r) => server.on('exit', r))
+}
+const serverFingerprint = await startServer()
 
 /* ---------------- client helper ---------------- */
 
@@ -164,6 +175,7 @@ const step = (name, fn) => steps.push([name, fn])
 
 const alice = new WsClient('alice')
 const bob = new TcpClient('bob')
+const firstIds = [] // ids of the first two chats, checked after a restart
 
 step('websocket client completes the handshake', async () => {
   alice.connect()
@@ -172,6 +184,9 @@ step('websocket client completes the handshake', async () => {
 
 step('websocket client registers a name', async () => {
   alice.send({ type: FT.NAME, name: 'alice' })
+  // Empty history: just its end marker, then the welcome.
+  const end = await alice.expect(FT.HISTORY_END)
+  assert.deepEqual([end.more, end.flags], [false, FLAG.HISTORY])
   const w = await alice.expect(FT.WELCOME)
   assert.match(w.text, /Welcome, alice/)
   assert.deepEqual((await alice.expect(FT.USERS)).users, ['alice'])
@@ -181,6 +196,7 @@ step('tcp client joins the same room', async () => {
   bob.connect()
   await bob.expect('established')
   bob.send({ type: FT.NAME, name: 'bob' })
+  await bob.expect(FT.HISTORY_END)
   await bob.expect(FT.WELCOME)
   assert.deepEqual((await bob.expect(FT.USERS)).users, ['alice', 'bob'])
   assert.equal((await alice.expect(FT.JOIN)).name, 'bob')
@@ -190,13 +206,17 @@ step('chat crosses transports and reaches the sender too', async () => {
   alice.send({ type: FT.MSG, text: 'merhaba from the browser 🌍' })
   for (const c of [alice, bob]) {
     const m = await c.expect(FT.CHAT)
+    if (c === alice) firstIds.push(m.id)
     assert.equal(m.name, 'alice')
     assert.equal(m.text, 'merhaba from the browser 🌍')
     assert.ok(Math.abs(Date.now() - m.timestamp) < 5000)
   }
   bob.send({ type: FT.MSG, text: 'hi from the terminal' })
-  assert.equal((await alice.expect(FT.CHAT)).text, 'hi from the terminal')
-  await bob.expect(FT.CHAT)
+  const second = await alice.expect(FT.CHAT)
+  assert.equal(second.text, 'hi from the terminal')
+  assert.equal((await bob.expect(FT.CHAT)).id, second.id, 'everybody sees the same id')
+  assert.ok(second.id > 0)
+  firstIds.push(second.id)
 })
 
 step('a new member receives recent history before the welcome', async () => {
@@ -207,6 +227,8 @@ step('a new member receives recent history before the welcome', async () => {
   const second = await erin.expect(FT.CHAT)
   assert.deepEqual([first.name, first.text, first.flags], ['alice', 'merhaba from the browser 🌍', FLAG.HISTORY])
   assert.deepEqual([second.name, second.text, second.flags], ['bob', 'hi from the terminal', FLAG.HISTORY])
+  assert.deepEqual([first.id, second.id], firstIds, 'history keeps the original ids')
+  assert.equal((await erin.expect(FT.HISTORY_END)).more, false)
   await erin.expect(FT.WELCOME)
   erin.send({ type: FT.QUIT }, true)
   await erin.waitFor('closed')
@@ -298,6 +320,59 @@ step('a client that answers pings stays connected past the timeout', async () =>
   assert.equal((await alice.expect(FT.CHAT)).text, 'still here')
 })
 
+step('older messages come page by page', async () => {
+  // 4 chats so far + 60 = 64 in the store.
+  for (let i = 1; i <= 60; i++) alice.send({ type: FT.MSG, text: `bulk ${i}` })
+  for (let i = 1; i <= 60; i++) await alice.expect(FT.CHAT)
+
+  const frank = new WsClient('frank').connect()
+  await frank.expect('established')
+  frank.send({ type: FT.NAME, name: 'frank' })
+  const recent = []
+  for (let i = 0; i < 50; i++) recent.push(await frank.expect(FT.CHAT))
+  assert.equal(recent.at(-1).text, 'bulk 60')
+  assert.ok(recent.every((m, i) => i === 0 || m.id > recent[i - 1].id), 'oldest first')
+  assert.equal((await frank.expect(FT.HISTORY_END)).more, true)
+  await frank.expect(FT.WELCOME)
+
+  frank.send({ type: FT.HISTORY_REQ, beforeId: recent[0].id, limit: 50 })
+  const older = [await frank.waitFor(FT.CHAT)] // after USERS and PEER_KEY
+  let m
+  while ((m = await frank.next()).type === FT.CHAT) older.push(m)
+  assert.equal(m.type, FT.HISTORY_END)
+  assert.deepEqual([m.more, m.flags], [false, FLAG.HISTORY | FLAG.PAGE])
+  assert.equal(older.length, 14)
+  assert.equal(older[0].text, 'merhaba from the browser 🌍')
+  assert.ok(older.every((c) => c.flags === (FLAG.HISTORY | FLAG.PAGE)))
+  assert.ok(older.at(-1).id < recent[0].id, 'no overlap with what frank already has')
+
+  frank.send({ type: FT.QUIT }, true)
+  await frank.waitFor('closed')
+  await alice.waitFor(FT.LEAVE)
+})
+
+step('history survives a server restart', async () => {
+  alice.close()
+  await alice.waitFor('closed')
+  await stopServer()
+  assert.equal(await startServer(), serverFingerprint, 'same identity after restart')
+
+  const gina = new TcpClient('gina').connect()
+  await gina.expect('established')
+  gina.send({ type: FT.NAME, name: 'gina' })
+  const last = await gina.waitFor(FT.HISTORY_END)
+  assert.equal(last.more, true)
+  // The very first two messages, asked for by id: same ids, same text.
+  gina.send({ type: FT.HISTORY_REQ, beforeId: firstIds[1] + 1, limit: 2 })
+  const a = await gina.waitFor(FT.CHAT)
+  const b = await gina.expect(FT.CHAT)
+  assert.deepEqual([a.id, b.id], firstIds)
+  assert.deepEqual([a.text, b.text], ['merhaba from the browser 🌍', 'hi from the terminal'])
+  assert.equal((await gina.expect(FT.HISTORY_END)).more, false)
+  gina.send({ type: FT.QUIT }, true)
+  await gina.waitFor('closed')
+})
+
 step('a wrong pinned fingerprint is refused', async () => {
   const mallory = new WsClient('mallory', { pin: 'NOT-THE-SERVER' }).connect()
   const e = await mallory.expect('error')
@@ -320,9 +395,8 @@ for (const [name, fn] of steps) {
   }
 }
 
-alice.close()
-server.kill('SIGINT')
-await new Promise((r) => server.on('exit', r))
+if (!alice.closed) alice.close()
+await stopServer()
 rmSync(workDir, { recursive: true, force: true })
 
 if (failed) {
