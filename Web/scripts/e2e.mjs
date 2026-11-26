@@ -32,11 +32,15 @@ const workDir = mkdtempSync(join(tmpdir(), 'tcpchat-e2e-'))
 // A short idle timeout (pings after 1.2 s, drops after 3 s) lets the
 // heartbeat be tested quickly.
 const IDLE_TIMEOUT_S = 3
+const RATE = 20, BURST = RATE * 4
 let server
 let serverLog = ''
 // Started again later in the same directory: same key, same history file.
 function startServer() {
-  server = spawn(SERVER, ['-p', String(TCP_PORT), '-w', String(WS_PORT), '-t', String(IDLE_TIMEOUT_S)],
+  // 20 frames/s with bursts of 80: enough for the bulk messages below,
+  // low enough to test flood protection quickly.
+  server = spawn(SERVER, ['-p', String(TCP_PORT), '-w', String(WS_PORT), '-t', String(IDLE_TIMEOUT_S),
+                          '-r', String(RATE)],
                  { cwd: workDir })
   const startedAt = serverLog.length
   return new Promise((resolve, reject) => {
@@ -157,6 +161,8 @@ class TcpClient extends Client {
       }
     })
     this.sock.on('close', () => { this.closed = true; this.push({ type: 'closed' }) })
+    // A server closing on us while we still send gets a reset: that is a close too.
+    this.sock.on('error', () => {})
     return this
   }
   sendRecord(rec) {
@@ -371,6 +377,29 @@ step('history survives a server restart', async () => {
   assert.equal((await gina.expect(FT.HISTORY_END)).more, false)
   gina.send({ type: FT.QUIT }, true)
   await gina.waitFor('closed')
+})
+
+step('a flooding client is warned, then disconnected', async () => {
+  const mallet = new TcpClient('mallet').connect()
+  await mallet.expect('established')
+  mallet.send({ type: FT.NAME, name: 'mallet' })
+  await mallet.waitFor(FT.WELCOME)
+  for (let i = 0; i < 3 * BURST; i++) mallet.send({ type: FT.MSG, text: `spam ${i}` })
+
+  let chats = 0
+  const errors = []
+  for (;;) {
+    const m = await mallet.next(5000)
+    if (m.type === FT.CHAT) chats++
+    else if (m.type === FT.ERR) errors.push(m)
+    else if (m.type === 'closed') break
+  }
+  assert.ok(chats < BURST + 5, `only about a burst gets through (${chats})`)
+  assert.equal(errors[0]?.code, ERR.RATE_LIMITED)
+  assert.match(errors[0].text, /too fast/)
+  // The final "flooding" error may be lost: closing a socket the client is
+  // still writing to resets it. The server log shows why it was closed.
+  assert.match(serverLog, /kept flooding, disconnecting/)
 })
 
 step('a wrong pinned fingerprint is refused', async () => {
