@@ -14,12 +14,16 @@ export const Status = Object.freeze({
   UNTRUSTED: 'untrusted',     // pinned fingerprint changed: refuse
 })
 
-const MAX_MESSAGES = 500
+// Kept in memory; older ones can be loaded again from the server.
+const MAX_MESSAGES = 2000
+const HISTORY_PAGE = 50
 const TYPING_RESEND_MS = 2000 // refresh our own indicator at most this often
 const TYPING_SHOW_MS = 5000   // hide someone else's indicator after this
 const RECONNECT_MIN_MS = 1000
 const RECONNECT_MAX_MS = 15000
-let nextId = 1
+let nextId = 1    // local ids of new messages, counting up
+let olderId = 0   // local ids of loaded older messages, counting down: they
+                  // sort before everything and never look "new"
 
 // Copy of `obj` without `key` (for the typing map).
 function without(obj, key) {
@@ -48,13 +52,18 @@ export function useChat() {
   const [reconnectIn, setReconnectIn] = useState(null)
   const [typing, setTyping] = useState({}) // name -> expiry time (ms)
   const [keyedPeers, setKeyedPeers] = useState([]) // members we can DM
+  // Older messages on the server: null = not known yet.
+  const [hasOlder, setHasOlder] = useState(null)
+  const [loadingOlder, setLoadingOlder] = useState(false)
 
   const conn = useRef(null) // { ws, channel, seq }
   const meRef = useRef('')
-  // Chats already on screen, so history replayed after a reconnect does
-  // not show them twice. Timestamps alone are not unique (two messages can
-  // share a millisecond), hence the full key.
+  // Chats already on screen (by server id), so history replayed after a
+  // reconnect does not show them twice. Messages the server could not
+  // store have id 0 and fall back to their content.
   const seenChats = useRef(new Set())
+  const oldestId = useRef(0)   // oldest server id we have
+  const page = useRef([])      // an older page being received
   const typingSent = useRef({ active: false, at: 0 })
   // End-to-end encrypted DMs: our key pair and the members' public keys.
   const sodiumRef = useRef(null)
@@ -137,14 +146,34 @@ export function useChat() {
           break
         case FT.CHAT: {
           const history = (m.flags & FLAG.HISTORY) !== 0
-          const key = `${m.timestamp}|${m.name}|${m.text}`
-          if (history && seenChats.current.has(key)) break
+          const key = m.id ? m.id : `${m.timestamp}|${m.name}|${m.text}`
+          if (seenChats.current.has(key)) break
           seenChats.current.add(key)
+          if (m.id && (!oldestId.current || m.id < oldestId.current)) oldestId.current = m.id
+          const chat = { kind: 'chat', serverId: m.id, name: m.name, text: m.text, ts: m.timestamp,
+                         own: m.name === meRef.current, history }
+          if (m.flags & FLAG.PAGE) {
+            page.current.push(chat) // shown all at once on HISTORY_END
+            break
+          }
           if (!history) setTyping((t) => without(t, m.name))
-          addMessage({ kind: 'chat', name: m.name, text: m.text, ts: m.timestamp,
-                       own: m.name === meRef.current, history })
+          addMessage(chat)
           break
         }
+        case FT.HISTORY_END:
+          if (m.flags & FLAG.PAGE) {
+            const older = page.current
+            page.current = []
+            if (older.length) {
+              const firstId = olderId - older.length
+              olderId = firstId
+              const stamped = older.map((c, i) => ({ id: firstId + i, at: Date.now(), ...c }))
+              setMessages((prev) => [...stamped, ...prev])
+            }
+            setLoadingOlder(false)
+          }
+          setHasOlder(m.more)
+          break
         case FT.JOIN:
           setUsers((u) => (u.includes(m.name) ? u : [...u, m.name]))
           addMessage({ kind: 'system', text: `${m.name} joined the chat` })
@@ -240,6 +269,8 @@ export function useChat() {
 
       ws.onclose = () => {
         if (conn.current?.ws === ws) conn.current = null
+        page.current = []
+        setLoadingOlder(false)
         setUsers([])
         peers.current.clear()
         setKeyedPeers([])
@@ -328,6 +359,14 @@ export function useChat() {
     return safetyNumber(sodiumRef.current, userKey.current.publicKey, key)
   }, [])
 
+  /** Asks for the page of messages before the oldest one we have. */
+  const loadOlder = useCallback(() => {
+    if (loadingOlder || !hasOlder || !oldestId.current) return false
+    const ok = send({ type: FT.HISTORY_REQ, beforeId: oldestId.current, limit: HISTORY_PAGE })
+    if (ok) setLoadingOlder(true)
+    return ok
+  }, [send, loadingOlder, hasOlder])
+
   const clearError = useCallback(() => setError(null), [])
 
   // After the user confirmed out of band that the key change is legitimate.
@@ -341,6 +380,6 @@ export function useChat() {
   return {
     status, messages, users, me, error, serverFingerprint, pinnedFingerprint: pinned,
     reconnectIn, typing: Object.keys(typing), keyedPeers, login, sendText, sendDm, safetyWith,
-    notifyTyping, clearError, trustNewServerKey,
+    notifyTyping, clearError, trustNewServerKey, hasOlder, loadingOlder, loadOlder,
   }
 }
