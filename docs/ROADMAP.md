@@ -28,8 +28,12 @@ are a gentle start. See [CONTRIBUTING.md](../CONTRIBUTING.md).
        append-only log) so they survive a server restart; load older messages
        when the user scrolls up. Stable message IDs are the base for replies,
        reactions, edits and search.
-2. [ ] [#2](https://github.com/ohNando/tcp-chat/issues/2) **Rooms / channels:** `#general`, `#games`, …; a room list in the
-       sidebar, unread count per room. Needs protocol and server changes.
+2. [ ] [#2](https://github.com/ohNando/tcp-chat/issues/2) **Rooms / channels:** `#general`, `#games`, …
+       - A WhatsApp/Discord-style room panel on the left: last message and
+         unread count per room.
+       - Optional password-protected rooms. A password limits who can join;
+         it does not hide the room from the server (that is item 10).
+       - Needs protocol and server changes.
 3. [ ] [#3](https://github.com/ohNando/tcp-chat/issues/3) **Name ownership:** bind a name to the user's device key (already used
        for DMs) so nobody else can join under that name.
 
