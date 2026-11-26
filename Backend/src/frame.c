@@ -7,7 +7,7 @@ int frame_type_known(uint8_t type) {
         case FT_PING: case FT_PONG: case FT_TYPING: case FT_KEY: case FT_DM:
         case FT_USER_TYPING: case FT_PEER_KEY: case FT_DM_RECV:
         case FT_WELCOME: case FT_CHAT: case FT_JOIN: case FT_LEAVE:
-        case FT_USERS: case FT_ERR:
+        case FT_USERS: case FT_ERR: case FT_HISTORY_REQ: case FT_HISTORY_END:
             return 1;
         default:
             return 0;
@@ -34,6 +34,8 @@ const char* frame_type_name(uint8_t type) {
         case FT_LEAVE:     return "LEAVE";
         case FT_USERS:     return "USERS";
         case FT_ERR:       return "ERR";
+        case FT_HISTORY_REQ: return "HISTORY_REQ";
+        case FT_HISTORY_END: return "HISTORY_END";
         default:           return "UNKNOWN";
     }
 }

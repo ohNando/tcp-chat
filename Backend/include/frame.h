@@ -16,7 +16,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define FRAME_VERSION      1
+/* 2: CHAT carries a message id; HISTORY_REQ / HISTORY_END added. */
+#define FRAME_VERSION      2
 #define FRAME_HEADER_SIZE  12
 #define FRAME_MAX_PAYLOAD  (64 * 1024)
 #define FRAME_MAX_SIZE     (FRAME_HEADER_SIZE + FRAME_MAX_PAYLOAD)
@@ -32,6 +33,7 @@ typedef enum {
     FT_TYPING    = 0x07,
     FT_KEY       = 0x08,
     FT_DM        = 0x09,
+    FT_HISTORY_REQ = 0x0A,
 
     /* server -> client */
     FT_WELCOME   = 0x81,
@@ -43,10 +45,12 @@ typedef enum {
     FT_USER_TYPING = 0x87,
     FT_PEER_KEY  = 0x88,
     FT_DM_RECV   = 0x89,
+    FT_HISTORY_END = 0x8A,
 } frame_type_t;
 
 /* Frame flags (header byte 2). Unknown flags are ignored by receivers. */
 #define FLAG_HISTORY 0x01   /* CHAT replayed from history, not live */
+#define FLAG_PAGE    0x02   /* CHAT answering a HISTORY_REQ (older page) */
 
 typedef struct {
     uint8_t version;

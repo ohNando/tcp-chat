@@ -36,10 +36,12 @@ TEST(msg_and_welcome_round_trip) {
 
 TEST(chat_round_trips) {
     message_init(&in, FT_CHAT);
+    in.id = 0x0102030405060708ULL;
     in.timestamp = 1763900000123ULL;
     strcpy(in.name, "ali");
     strcpy(in.text, "selam");
     CHECK_EQ_INT(round_trip(), 0);
+    CHECK(out.id == 0x0102030405060708ULL);
     CHECK(out.timestamp == 1763900000123ULL);
     CHECK_EQ_STR(out.name, "ali");
     CHECK_EQ_STR(out.text, "selam");
@@ -153,6 +155,30 @@ TEST(flags_round_trip) {
     CHECK_EQ_INT(out.flags, 0);
 }
 
+TEST(history_frames_round_trip) {
+    message_init(&in, FT_HISTORY_REQ);
+    in.id = 4242;
+    in.limit = 50;
+    CHECK_EQ_INT(round_trip(), 0);
+    CHECK_EQ_INT(out.type, FT_HISTORY_REQ);
+    CHECK(out.id == 4242);
+    CHECK_EQ_INT(out.limit, 50);
+
+    message_init(&in, FT_HISTORY_END);
+    in.more = 1;
+    CHECK_EQ_INT(round_trip(), 0);
+    CHECK_EQ_INT(out.more, 1);
+
+    /* An older page is marked with both flags. */
+    message_init(&in, FT_CHAT);
+    in.flags = FLAG_HISTORY | FLAG_PAGE;
+    in.id = 7;
+    strcpy(in.name, "ali");
+    strcpy(in.text, "eski");
+    CHECK_EQ_INT(round_trip(), 0);
+    CHECK_EQ_INT(out.flags, FLAG_HISTORY | FLAG_PAGE);
+}
+
 TEST(typing_round_trips) {
     message_init(&in, FT_TYPING);
     in.active = 1;
@@ -228,5 +254,6 @@ int main(void) {
     RUN(decode_rejects_overlong_name);
     RUN(decode_rejects_too_many_users);
     RUN(encode_fails_when_buffer_too_small);
+    RUN(history_frames_round_trip);
     return TEST_REPORT();
 }

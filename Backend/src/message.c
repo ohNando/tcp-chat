@@ -41,6 +41,7 @@ static void encode_payload(const message_t* m, bytebuf_t* b) {
             bb_put_str(b, m->text);
             break;
         case FT_CHAT:
+            bb_put_u64(b, m->id);
             bb_put_u64(b, m->timestamp);
             bb_put_str(b, m->name);
             bb_put_str(b, m->text);
@@ -81,6 +82,13 @@ static void encode_payload(const message_t* m, bytebuf_t* b) {
         case FT_USER_TYPING:
             bb_put_str(b, m->name);
             bb_put_u8(b, m->active ? 1 : 0);
+            break;
+        case FT_HISTORY_REQ:
+            bb_put_u64(b, m->id);
+            bb_put_u16(b, m->limit);
+            break;
+        case FT_HISTORY_END:
+            bb_put_u8(b, m->more ? 1 : 0);
             break;
         case FT_USERS_REQ:
         case FT_QUIT:
@@ -125,6 +133,7 @@ static void decode_payload(message_t* m, bytebuf_t* b) {
             bb_get_str(b, m->text, sizeof(m->text));
             break;
         case FT_CHAT:
+            bb_get_u64(b, &m->id);
             bb_get_u64(b, &m->timestamp);
             bb_get_str(b, m->name, sizeof(m->name));
             bb_get_str(b, m->text, sizeof(m->text));
@@ -165,6 +174,13 @@ static void decode_payload(message_t* m, bytebuf_t* b) {
         case FT_USER_TYPING:
             bb_get_str(b, m->name, sizeof(m->name));
             bb_get_u8(b, &m->active);
+            break;
+        case FT_HISTORY_REQ:
+            bb_get_u64(b, &m->id);
+            bb_get_u16(b, &m->limit);
+            break;
+        case FT_HISTORY_END:
+            bb_get_u8(b, &m->more);
             break;
         default:
             break; /* empty payloads */

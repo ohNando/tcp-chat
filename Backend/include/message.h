@@ -10,7 +10,7 @@
  *   QUIT      (empty)
  *   PING/PONG (empty)
  *   WELCOME   str text
- *   CHAT      u64 timestamp_ms | str name | str text
+ *   CHAT      u64 id | u64 timestamp_ms | str name | str text
  *   JOIN      str name
  *   LEAVE     str name
  *   USERS     u16 count | count x str name
@@ -21,6 +21,8 @@
  *   PEER_KEY     str name | key[32]         (server -> client)
  *   DM           str to | nonce[24] | u16 len | box[len]          (client -> server)
  *   DM_RECV      u64 ts | str from | str to | nonce[24] | u16 len | box[len]
+ *   HISTORY_REQ  u64 before_id | u16 limit   (client -> server; before_id 0 = newest)
+ *   HISTORY_END  u8 more                     (server -> client, ends a history batch)
  *
  * DM boxes are end-to-end encrypted between the two users (see dm.h); the
  * server only relays them.
@@ -57,7 +59,10 @@ typedef enum {
 typedef struct {
     uint8_t type;
     uint8_t flags;                           /* FLAG_* from frame.h */
+    uint64_t id;                             /* CHAT (0 = not stored), HISTORY_REQ (before) */
     uint64_t timestamp;                      /* CHAT, DM_RECV */
+    uint16_t limit;                          /* HISTORY_REQ */
+    uint8_t more;                            /* HISTORY_END: older messages exist */
     uint16_t code;                           /* ERR */
     uint8_t active;                          /* TYPING, USER_TYPING */
     char name[NAME_MAX_LEN + 1];             /* NAME, CHAT, JOIN, LEAVE, PEER_KEY, DM_RECV (from) */
