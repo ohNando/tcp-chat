@@ -62,7 +62,9 @@ Only the latest commit on `main` is supported.
   in transit; serve it over HTTPS beyond `localhost`.
 - **No `Origin` check** on WebSocket upgrades. There are no cookies or
   sessions, so this is low risk today.
-- **No rate limiting** of messages beyond the output buffer cap.
+- **Rate limiting is per connection.** Each connection may send 5 frames
+  per second (`-r`); a flooding connection is warned, then closed. Someone
+  opening many connections is limited only by the member limit (`-m`).
 
 ## Cryptography
 

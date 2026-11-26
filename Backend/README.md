@@ -53,6 +53,7 @@ make run-server
 | `-t` | `75` | idle timeout in seconds: silent connections are pinged, then dropped |
 | `-s` | `chat.db` | message history database (SQLite), created on first start; `:memory:` keeps it only while the server runs |
 | `-H` | `0` | delete room messages older than this many days; `0` keeps them forever |
+| `-r` | `5` | frames per second one client may send (bursts of 4×); `0` turns flood protection off |
 
 `make run-server` passes `-d ../Web/dist` automatically if the web client
 has been built (`npm run build` in `Web`).

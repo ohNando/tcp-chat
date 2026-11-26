@@ -203,6 +203,16 @@ hides the indicator if it is not refreshed within 5 seconds.
 | 7 | `TEXT_INVALID` | empty, too long, or contains control characters |
 | 8 | `NO_SUCH_USER` | a `DM` names someone who is not in the room |
 | 9 | `NO_KEY` | a `DM` when the sender or the recipient has not sent `KEY` yet |
+| 10 | `RATE_LIMITED` | the client sends too fast (see below); the frame was dropped |
+
+### Flood protection
+
+Every frame a client sends, except `PING`, `PONG` and `QUIT`, costs one
+token from a per-connection bucket that refills at `-r` frames per second
+(5 by default) and holds four seconds' worth (20). A person typing never
+reaches it. When the bucket is empty the frame is dropped and the client
+gets one `RATE_LIMITED` error; further frames are dropped silently, and a
+connection that had a whole bucket's worth dropped is closed.
 
 ## Session flow
 
