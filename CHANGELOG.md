@@ -14,6 +14,9 @@ change between minor versions). Planned work is in
   `-H` retention in days). Newcomers get the last 50 messages.
 - Loading older messages: scroll up in the web and desktop clients, or use
   `/history` in the terminal client.
+- Flood protection: a token bucket per connection (`-r`, 5 frames/s with
+  bursts of 20 by default). Clients that keep flooding are disconnected
+  (error code 10, `RATE_LIMITED`).
 - Code of conduct, support guide, changelog, monthly Dependabot updates and
   CodeQL scanning.
 

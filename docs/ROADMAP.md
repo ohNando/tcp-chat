@@ -51,7 +51,8 @@ are a gentle start. See [CONTRIBUTING.md](../CONTRIBUTING.md).
         server cannot read room messages either. Today only DMs are
         end-to-end encrypted. The largest and most careful piece of work:
         please discuss the design in an issue before writing code.
-11. [ ] [#11](https://github.com/ohNando/tcp-chat/issues/11) Moderation (kick, mute) and flood protection.
+11. [ ] [#11](https://github.com/ohNando/tcp-chat/issues/11) Moderation (kick, mute), by room owners or the server operator.
+        Flood protection (a rate limit per connection) is done.
 
 ### Distribution
 
