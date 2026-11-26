@@ -54,6 +54,7 @@ int store_open(store_t* s, const char* path, int retention_days) {
 }
 
 void store_close(store_t* s) {
+    store_flush(s);
     sqlite3_finalize(s->insert);
     sqlite3_finalize(s->page);
     sqlite3_finalize(s->prune);
@@ -63,6 +64,13 @@ void store_close(store_t* s) {
 
 uint64_t store_add(store_t* s, uint64_t timestamp, const char* name, const char* text) {
     if (!s->db) return 0;
+    if (!s->in_tx) {
+        if (sqlite3_exec(s->db, "BEGIN", NULL, NULL, NULL) != SQLITE_OK) {
+            fail(s, "cannot begin a transaction");
+            return 0;
+        }
+        s->in_tx = 1;
+    }
     sqlite3_reset(s->insert);
     sqlite3_bind_int64(s->insert, 1, (sqlite3_int64)timestamp);
     sqlite3_bind_text(s->insert, 2, name, -1, SQLITE_STATIC);
@@ -111,7 +119,17 @@ int store_page(store_t* s, uint64_t before_id, int limit,
     return n;
 }
 
+void store_flush(store_t* s) {
+    if (!s->db || !s->in_tx) return;
+    s->in_tx = 0;
+    if (sqlite3_exec(s->db, "COMMIT", NULL, NULL, NULL) != SQLITE_OK) {
+        fail(s, "cannot commit messages");
+        sqlite3_exec(s->db, "ROLLBACK", NULL, NULL, NULL);
+    }
+}
+
 int store_prune(store_t* s, uint64_t now_ms) {
+    store_flush(s);
     if (!s->db || s->retention_days <= 0) return 0;
     uint64_t cutoff = now_ms - (uint64_t)s->retention_days * 24 * 3600 * 1000;
     sqlite3_reset(s->prune);

@@ -735,6 +735,7 @@ static void prune_history(void) {
 
 static void sweep(void) {
     int again;
+    store_flush(&store); /* this turn's messages, in one commit */
     check_timeouts();
     prune_history();
     do {

@@ -32,6 +32,7 @@ typedef struct {
     sqlite3_stmt* page;
     sqlite3_stmt* prune;
     int retention_days;       /* 0 = keep forever */
+    int in_tx;                /* a transaction is open (see store_flush) */
 } store_t;
 
 typedef struct {
@@ -47,7 +48,9 @@ int store_open(store_t* s, const char* path, int retention_days);
 void store_close(store_t* s);
 
 /* Saves one message. Returns its id (> 0), or 0 if it could not be saved
- * (the message is still delivered, just not kept). */
+ * (the message is still delivered, just not kept). Messages are grouped
+ * into one transaction until store_flush(): one commit per event-loop turn
+ * instead of one per message. */
 uint64_t store_add(store_t* s, uint64_t timestamp, const char* name, const char* text);
 
 /* Calls `cb` for up to `limit` messages older than `before_id` (0 = the
@@ -55,6 +58,9 @@ uint64_t store_add(store_t* s, uint64_t timestamp, const char* name, const char*
  * Returns the number of messages, or -1 on error. */
 int store_page(store_t* s, uint64_t before_id, int limit,
                void (*cb)(void* ctx, const stored_message_t* m), void* ctx, int* more);
+
+/* Commits the messages added since the last call. */
+void store_flush(store_t* s);
 
 /* Deletes messages older than the retention period. Returns how many. */
 int store_prune(store_t* s, uint64_t now_ms);

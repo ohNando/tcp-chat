@@ -117,6 +117,36 @@ TEST(history_survives_reopening) {
     unlink(shm);
 }
 
+TEST(flush_commits_the_turns_messages) {
+    char path[] = "/tmp/tcpchat-store-XXXXXX";
+    int fd = mkstemp(path);
+    close(fd);
+    store_t writer, reader;
+    CHECK_EQ_INT(store_open(&writer, path, 0), 0);
+    CHECK_EQ_INT(store_open(&reader, path, 0), 0);
+
+    CHECK(store_add(&writer, 1, "alice", "one") > 0);
+    CHECK(store_add(&writer, 2, "alice", "two") > 0);
+    page_t p = { 0 };
+    int more;
+    /* The writer sees its own messages at once (for history requests)... */
+    CHECK_EQ_INT(store_page(&writer, 0, 10, collect, &p, &more), 2);
+    /* ...others only after the commit. */
+    page_t q = { 0 };
+    CHECK_EQ_INT(store_page(&reader, 0, 10, collect, &q, &more), 0);
+    store_flush(&writer);
+    CHECK_EQ_INT(store_page(&reader, 0, 10, collect, &q, &more), 2);
+
+    store_close(&writer);
+    store_close(&reader);
+    char wal[64], shm[64];
+    snprintf(wal, sizeof(wal), "%s-wal", path);
+    snprintf(shm, sizeof(shm), "%s-shm", path);
+    unlink(path);
+    unlink(wal);
+    unlink(shm);
+}
+
 TEST(prune_drops_only_old_messages) {
     const uint64_t day = 24ull * 3600 * 1000, now = 100 * day;
     store_t s;
@@ -149,6 +179,7 @@ int main(void) {
     RUN(page_size_is_capped);
     RUN(text_is_stored_verbatim);
     RUN(history_survives_reopening);
+    RUN(flush_commits_the_turns_messages);
     RUN(prune_drops_only_old_messages);
     RUN(bad_path_fails_cleanly);
     return TEST_REPORT();
