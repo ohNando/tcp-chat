@@ -9,9 +9,14 @@
 #include "chat_client.h"
 #include "theme.h"
 
+// What the top of the list shows (web: .history-top).
+enum class HistoryTop { None, Load, Loading, Beginning };
+
 // Draws the lines into the current (scrolling) window, starting at the
-// cursor and using the available width.
-void draw_chat_view(const std::vector<ChatLine>& lines, const Palette& p, bool compact, bool narrow);
+// cursor and using the available width. Returns true when "Load earlier
+// messages" was clicked.
+bool draw_chat_view(const std::vector<ChatLine>& lines, const Palette& p, bool compact, bool narrow,
+                    HistoryTop top);
 
 // "05:15 PM" or "17:15", following the system locale like the browser's
 // toLocaleTimeString(); "Today", "Yesterday" or a date for separators.

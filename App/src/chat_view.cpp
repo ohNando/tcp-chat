@@ -198,6 +198,37 @@ void bubble(Ctx& c, const ChatLine& l, bool first) {
     advance(b.y - cur.y);
 }
 
+// .history-top: a "Load earlier messages" link or "This is the beginning
+// of the chat", centered, margin 2px 0 6px.
+bool history_top(Ctx& c, HistoryTop top) {
+    if (top == HistoryTop::None) return false;
+    advance(2);
+    ImVec2 cur = ImGui::GetCursorScreenPos();
+    bool clicked = false;
+    float h;
+    if (top == HistoryTop::Beginning) {
+        Font f{ fonts.regular, rem(0.78f) };
+        const char* t = "This is the beginning of the chat";
+        float w = ui::text_width(f, t);
+        h = f.line() + 6;
+        ui::text(c.dl, ImVec2(std::round(c.x + (c.width - w) / 2), cur.y + 3), f, col(c.p.muted), t);
+    } else {
+        Font f{ fonts.medium, rem(0.8f) };
+        const char* t = top == HistoryTop::Loading ? "Loading…" : "Load earlier messages";
+        float w = ui::text_width(f, t) + 20;
+        h = f.line() + 8;
+        ImVec2 a(std::round(c.x + (c.width - w) / 2), cur.y), b(a.x + w, a.y + h);
+        ImGui::SetCursorScreenPos(a);
+        clicked = ImGui::InvisibleButton("##older", ImVec2(w, h)) && top == HistoryTop::Load;
+        ui::shadow(c.dl, a, b, h / 2, 1, 2, 0.12f);
+        c.dl->AddRectFilled(a, b, col(c.p.panel), h / 2);
+        ui::text(c.dl, ImVec2(a.x + 10, a.y + 4), f, col(top == HistoryTop::Load ? c.p.accent : c.p.muted), t);
+        ImGui::SetCursorScreenPos(cur);
+    }
+    advance(h + 6);
+    return clicked;
+}
+
 bool same_lane(const ChatLine& a, const ChatLine& b) {
     return a.kind == b.kind && a.name == b.name && (a.kind != ChatLine::Dm || a.to == b.to) &&
            a.history == b.history && b.timestamp - a.timestamp <= GROUP_GAP_MS;
@@ -205,11 +236,13 @@ bool same_lane(const ChatLine& a, const ChatLine& b) {
 
 } // namespace
 
-void draw_chat_view(const std::vector<ChatLine>& lines, const Palette& p, bool compact, bool narrow) {
+bool draw_chat_view(const std::vector<ChatLine>& lines, const Palette& p, bool compact, bool narrow,
+                    HistoryTop top) {
     ImVec2 start = ImGui::GetCursorScreenPos();
     Ctx c{ ImGui::GetWindowDrawList(), p, start.x, ImGui::GetContentRegionAvail().x, compact, narrow };
 
     advance(12); // .messages-box padding-top
+    bool load = history_top(c, top);
     int last_day = -1;
     const ChatLine* prev = nullptr; // previous bubble, if the previous item was one
     for (const ChatLine& l : lines) {
@@ -239,4 +272,5 @@ void draw_chat_view(const std::vector<ChatLine>& lines, const Palette& p, bool c
     }
     advance(8); // padding-bottom
     ImGui::Dummy(ImVec2(c.width, 0));
+    return load;
 }

@@ -416,7 +416,26 @@ void App::drawChatArea(ImVec2 a, ImVec2 b) {
     // Follow new messages only if the user is already at the bottom, so
     // scrolling up to read history is not interrupted.
     bool at_bottom = ImGui::GetScrollY() >= ImGui::GetScrollMaxY() - 4.0f;
-    draw_chat_view(client_.lines(), p, settings_.compact, ImGui::GetMainViewport()->WorkSize.x <= 720);
+
+    // An older page was inserted above: once its height is known (the frame
+    // after), scroll so the same messages stay in view.
+    if (restore_from_bottom_ >= 0 && client_.prependVersion() != seen_prepend_ && prepend_settled_) {
+        ImGui::SetScrollY(std::max(0.0f, ImGui::GetScrollMaxY() - restore_from_bottom_));
+        restore_from_bottom_ = -1;
+        seen_prepend_ = client_.prependVersion();
+        prepend_settled_ = false;
+    } else if (client_.prependVersion() != seen_prepend_) {
+        prepend_settled_ = true;
+    }
+
+    HistoryTop top = HistoryTop::None;
+    if (client_.hasOlder() == 1) top = client_.loadingOlder() ? HistoryTop::Loading : HistoryTop::Load;
+    else if (client_.hasOlder() == 0) top = HistoryTop::Beginning;
+    bool clicked = draw_chat_view(client_.lines(), p, settings_.compact, ImGui::GetMainViewport()->WorkSize.x <= 720,
+                                  top);
+    // Near the top (or the link clicked): ask for the page before it.
+    if ((clicked || (ImGui::GetScrollY() < 80 && ImGui::GetScrollMaxY() > 0)) && client_.loadOlder())
+        restore_from_bottom_ = ImGui::GetScrollMaxY() - ImGui::GetScrollY();
     uint64_t v = client_.linesVersion();
     if (v != seen_version_) {
         const ChatLine* last = client_.lines().empty() ? nullptr : &client_.lines().back();

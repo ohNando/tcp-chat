@@ -97,5 +97,8 @@ private:
     bool focus_input_ = true;
     bool emoji_open_ = false;
     uint64_t seen_version_ = 0;   // lines version drawn last frame
+    uint64_t seen_prepend_ = 0;   // prepend version handled
+    bool prepend_settled_ = false;
+    float restore_from_bottom_ = -1; // scroll distance from the bottom to keep
     std::string dm_target_;       // private-message recipient, empty = room
 };
