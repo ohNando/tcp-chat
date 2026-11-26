@@ -161,6 +161,29 @@ await step('settings survive a reload', async () => {
   assert.equal(saved, 'custom')
 })
 
+await step('scrolling to the top loads older messages', async () => {
+  // 60 more messages: a newcomer gets the last 50 and can load the rest.
+  for (let i = 1; i <= 60; i++) {
+    await ff.type('.input-form input', `yığın ${i}`)
+    await ff.click('.input-form button[type=submit]')
+  }
+  await ff.waitFor(`[...document.querySelectorAll('.bubble-text')].some(e => e.textContent === 'yığın 60')`)
+
+  await other.waitFor(`${textOf('.status')}.includes('Secure connection')`)
+  await other.type('.login-screen input', 'Mehmet')
+  await other.click('.login-screen button[type=submit]')
+  await other.waitFor(`${textOf('.history-top')}.includes('Load earlier messages')`)
+  const bubbles = `document.querySelectorAll('.bubble').length`
+  assert.equal(await other.eval(bubbles), 50)
+
+  await other.eval(`(document.querySelector('.messages-box').scrollTop = 0, true)`)
+  await other.waitFor(`${textOf('.history-top')}.includes('beginning of the chat')`)
+  assert.ok(await other.eval(bubbles) > 50)
+  assert.match(await other.eval(`document.querySelector('.bubble-text').textContent`), /Merhaba/)
+  // The view stays on what was being read instead of jumping to the top.
+  assert.ok(await other.eval(`document.querySelector('.messages-box').scrollTop`) > 100)
+})
+
 await ff.close()
 server.kill('SIGINT')
 await new Promise((resolve) => server.on('exit', resolve))
