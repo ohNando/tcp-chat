@@ -14,7 +14,8 @@
 #include <unistd.h>
 
 static constexpr double CONNECT_TIMEOUT_S = 5.0;
-static constexpr size_t MAX_LINES = 1000;
+static constexpr size_t MAX_LINES = 3000;
+static constexpr uint16_t HISTORY_PAGE = 50;
 static constexpr double TYPING_RESEND_S = 2.0;
 static constexpr double TYPING_SHOW_S = 5.0;
 
@@ -106,6 +107,8 @@ void ChatClient::closeSocket() {
     framer_free(&in_);
     framer_init(&in_, RECORD_MAX_BODY);
     tx_seq_ = 0;
+    page_.clear(); // a page cut off by the drop is asked for again later
+    loading_older_ = false;
     users_.clear();
     peers_.clear();
     typing_.clear();
@@ -320,11 +323,31 @@ void ChatClient::handleMessage(const message_t& m) {
         case FT_CHAT: {
             bool history = (m.flags & FLAG_HISTORY) != 0;
             // History replayed after a reconnect must not repeat lines.
-            if (history && alreadyShown(m)) break;
+            if (alreadyShown(m)) break;
+            if (m.id) {
+                seen_ids_.insert(m.id);
+                if (!oldest_id_ || m.id < oldest_id_) oldest_id_ = m.id;
+            }
+            if (m.flags & FLAG_PAGE) { // an older page: shown at once on HISTORY_END
+                page_.push_back(ChatLine{ ChatLine::Chat, m.name, {}, m.text, m.timestamp, name_ == m.name, true,
+                                          m.id });
+                break;
+            }
             if (!history) typing_.erase(m.name); // the message ends their typing
-            addLine(ChatLine::Chat, m.text, m.name, m.timestamp, name_ == m.name, history);
+            addLine(ChatLine::Chat, m.text, m.name, m.timestamp, name_ == m.name, history, {}, m.id);
             break;
         }
+        case FT_HISTORY_END:
+            if (m.flags & FLAG_PAGE) {
+                if (!page_.empty()) {
+                    lines_.insert(lines_.begin(), page_.begin(), page_.end());
+                    page_.clear();
+                    prepend_version_++;
+                }
+                loading_older_ = false;
+            }
+            has_older_ = m.more ? 1 : 0;
+            break;
         case FT_USER_TYPING:
             if (m.active)
                 typing_[m.name] = now_s() + TYPING_SHOW_S;
@@ -479,7 +502,20 @@ bool ChatClient::requestUsers() {
     return sendMessage(*scratch_);
 }
 
+bool ChatClient::loadOlder() {
+    if (loading_older_ || has_older_ != 1 || !oldest_id_ || state_ != ConnState::Chatting) return false;
+    if (lines_.size() + HISTORY_PAGE > MAX_LINES) return false; // keep what is on screen
+    message_t& m = *scratch_;
+    message_init(&m, FT_HISTORY_REQ);
+    m.id = oldest_id_;
+    m.limit = HISTORY_PAGE;
+    if (!sendMessage(m)) return false;
+    loading_older_ = true;
+    return true;
+}
+
 bool ChatClient::alreadyShown(const message_t& chat) const {
+    if (chat.id) return seen_ids_.count(chat.id) != 0;
     // Timestamps are not unique on their own (two messages can share a
     // millisecond), so compare the whole message.
     for (const ChatLine& l : lines_)
@@ -490,13 +526,13 @@ bool ChatClient::alreadyShown(const message_t& chat) const {
 }
 
 void ChatClient::addLine(ChatLine::Kind kind, std::string text, std::string name,
-                         uint64_t ts, bool own, bool history, std::string to) {
+                         uint64_t ts, bool own, bool history, std::string to, uint64_t id) {
     if (lines_.size() >= MAX_LINES) lines_.erase(lines_.begin(), lines_.begin() + MAX_LINES / 10);
     // System lines have no server timestamp: use the time we got them, so
     // the chat view can put them under the right day.
     if (ts == 0)
         ts = static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::system_clock::now().time_since_epoch()).count());
-    lines_.push_back(ChatLine{ kind, std::move(name), std::move(to), std::move(text), ts, own, history });
+    lines_.push_back(ChatLine{ kind, std::move(name), std::move(to), std::move(text), ts, own, history, id });
     lines_version_++;
 }

@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <map>
 #include <memory>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -30,6 +31,7 @@ struct ChatLine {
     uint64_t timestamp; // ms since epoch (for system lines: when received)
     bool own;
     bool history;       // replayed by the server when we joined
+    uint64_t id = 0;    // the server's message id (Chat only; 0 = not stored)
 };
 
 class ChatClient {
@@ -48,6 +50,16 @@ public:
 
     bool sendText(const std::string& text);
     bool requestUsers();
+
+    // ---- older messages ----------------------------------------------------
+    // The server sends the last messages on join; older ones come in pages.
+    // hasOlder(): -1 not known yet, 0 no, 1 yes.
+    int hasOlder() const { return has_older_; }
+    bool loadingOlder() const { return loading_older_; }
+    bool loadOlder();
+    // Bumps when a page of older lines was inserted at the front (not
+    // counted in linesVersion(), which only tracks lines added at the end).
+    uint64_t prependVersion() const { return prepend_version_; }
 
     // End-to-end encrypted private messages.
     bool canDm(const std::string& name) const { return peers_.count(name) != 0; }
@@ -96,7 +108,8 @@ private:
     void fail(const std::string& why);
     bool alreadyShown(const message_t& chat) const;
     void addLine(ChatLine::Kind kind, std::string text, std::string name = {},
-                 uint64_t ts = 0, bool own = false, bool history = false, std::string to = {});
+                 uint64_t ts = 0, bool own = false, bool history = false, std::string to = {},
+                 uint64_t id = 0);
     void onPeerKey(const message_t& m);
     void onDm(const message_t& m);
     void closeSocket();
@@ -121,6 +134,12 @@ private:
     std::vector<std::string> users_;
     std::vector<ChatLine> lines_;
     uint64_t lines_version_ = 0;
+    std::set<uint64_t> seen_ids_;   // chats on screen, by server id
+    uint64_t oldest_id_ = 0;
+    int has_older_ = -1;
+    bool loading_older_ = false;
+    std::vector<ChatLine> page_;    // an older page being received
+    uint64_t prepend_version_ = 0;
     std::string last_error_;
 
     user_key_t my_key_{};
