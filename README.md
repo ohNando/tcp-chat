@@ -1,6 +1,8 @@
 # TCP Chat
 
 [![CI](https://github.com/ohNando/tcp-chat/actions/workflows/ci.yml/badge.svg)](https://github.com/ohNando/tcp-chat/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/ohNando/tcp-chat/actions/workflows/github-code-scanning/codeql/badge.svg)](https://github.com/ohNando/tcp-chat/security/code-scanning)
+[![Release](https://img.shields.io/github/v/release/ohNando/tcp-chat)](https://github.com/ohNando/tcp-chat/releases)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 An encrypted chat built from scratch to learn how networking really works:
@@ -145,8 +147,10 @@ behind libraries.
 
 ## Contributing
 
-Ideas and open work are listed in [docs/ROADMAP.md](docs/ROADMAP.md); help is
-welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for how to send changes.
+Ideas and open work are listed in [docs/ROADMAP.md](docs/ROADMAP.md), each
+with an issue; help is welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for
+how to send changes and [SUPPORT.md](SUPPORT.md) for where to ask questions.
+Changes per version are in [CHANGELOG.md](CHANGELOG.md).
 
 ## License
 
