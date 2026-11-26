@@ -103,7 +103,7 @@ export class SecureChannel {
     let p = 5
     const serverEph = rec.slice(p, p += KX_PK)
     const serverId = rec.slice(p, p += ID_PK)
-    const sig = rec.slice(p, p += SIG)
+    const sig = rec.slice(p, p + SIG)
 
     const transcript = concat(CONTEXT, this.ephPk, serverEph, serverId)
     if (!s.crypto_sign_verify_detached(sig, transcript, serverId))
