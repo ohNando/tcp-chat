@@ -34,5 +34,12 @@
  * ones are fetched page by page with HISTORY_REQ. */
 #define SERVER_HISTORY_MAX 50
 #define SERVER_DEFAULT_HISTORY_DB "chat.db"
+/* Flood protection: frames per second per connection, and the burst a
+ * connection may send at once (SERVER_BURST_FACTOR x rate, at least
+ * SERVER_MIN_BURST). A connection that keeps sending while limited is
+ * closed once it has had a whole burst dropped. */
+#define SERVER_DEFAULT_RATE   5
+#define SERVER_BURST_FACTOR   4
+#define SERVER_MIN_BURST      10
 
 #endif

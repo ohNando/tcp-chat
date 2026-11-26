@@ -25,6 +25,7 @@
 #include "identity.h"
 #include "message.h"
 #include "secure.h"
+#include "ratelimit.h"
 
 #define CONN_OUT_MAX (1024 * 1024)
 
@@ -77,6 +78,8 @@ typedef struct conn {
     uint64_t created_ms;          /* for the handshake timeout */
     uint64_t last_rx_ms;          /* last time any byte arrived */
     uint64_t last_ping_ms;        /* last heartbeat PING we sent */
+    bucket_t bucket;              /* flood protection, see ratelimit.h */
+    uint32_t dropped;             /* frames dropped since the last accepted one */
 
     uint32_t tx_seq;
     int registered;

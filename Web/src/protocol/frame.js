@@ -63,6 +63,7 @@ export const ERR = Object.freeze({
   TEXT_INVALID: 7,
   NO_SUCH_USER: 8,
   NO_KEY: 9,
+  RATE_LIMITED: 10,
 })
 
 const KNOWN_TYPES = new Set(Object.values(FT))

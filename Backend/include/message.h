@@ -54,6 +54,7 @@ typedef enum {
     ERR_TEXT_INVALID      = 7,
     ERR_NO_SUCH_USER      = 8,
     ERR_NO_KEY            = 9,
+    ERR_RATE_LIMITED      = 10,
 } error_code_t;
 
 typedef struct {

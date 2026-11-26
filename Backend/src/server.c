@@ -34,6 +34,16 @@ static store_t store;
 static uint64_t last_prune_ms;
 static int next_conn_id = 1;
 
+static double rate_per_s = SERVER_DEFAULT_RATE;
+static double burst = SERVER_DEFAULT_RATE * SERVER_BURST_FACTOR;
+
+/* Monotonic: rate limiting must not jump with the wall clock. */
+static uint64_t mono_ms(void) {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (uint64_t)ts.tv_sec * 1000u + (uint64_t)ts.tv_nsec / 1000000u;
+}
+
 static uint64_t now_ms(void) {
     struct timespec ts;
     clock_gettime(CLOCK_REALTIME, &ts);
@@ -208,8 +218,31 @@ static void handle_dm(conn_t* c, const message_t* in) {
     if (to != c) room_send_to(c, &m);
 }
 
+/* Flood protection. Returns 1 if the frame may be handled. Heartbeat and
+ * QUIT are free; everything else costs one token. The first dropped frame
+ * gets an error back, later ones are dropped silently, and a connection
+ * that had a whole burst dropped is closed. */
+static int allow_frame(conn_t* c, uint8_t type) {
+    if (type == FT_PING || type == FT_PONG || type == FT_QUIT) return 1;
+    if (bucket_take(&c->bucket, rate_per_s, burst, mono_ms())) {
+        c->dropped = 0;
+        return 1;
+    }
+    if (c->dropped++ == 0) {
+        log_info("conn %d (%s): rate limited", c->id, c->peer);
+        send_error(c, ERR_RATE_LIMITED, "You are sending too fast. Wait a moment.");
+    } else if (c->dropped > (uint32_t)burst) {
+        log_info("conn %d (%s): kept flooding, disconnecting", c->id, c->peer);
+        send_error(c, ERR_RATE_LIMITED, "Disconnected for flooding.");
+        c->close_after_flush = 1;
+    }
+    return 0;
+}
+
 static void handle_message(conn_t* c, const message_t* m) {
     message_t reply;
+
+    if (!allow_frame(c, m->type)) return;
 
     /* Before NAME only a few frames make sense. */
     if (!c->registered && m->type != FT_NAME && m->type != FT_PING && m->type != FT_QUIT) {
@@ -831,7 +864,7 @@ static void run(void) {
 static void usage(const char* prog) {
     fprintf(stderr,
             "Usage: %s [-p port] [-w ws_port] [-d web_root] [-m max_clients] [-k key_file] [-t seconds]\n"
-            "          [-s history_db] [-H days]\n"
+            "          [-s history_db] [-H days] [-r rate]\n"
             "  -p  TCP port to listen on (default %d)\n"
             "  -w  HTTP/WebSocket port, 0 to disable (default %d)\n"
             "  -d  directory with the web client to serve over HTTP (default: none)\n"
@@ -839,9 +872,11 @@ static void usage(const char* prog) {
             "  -k  server identity key, created if missing (default %s)\n"
             "  -t  drop connections silent for this long, pinging them first (default %d)\n"
             "  -s  message history database, created if missing; :memory: keeps it in RAM (default %s)\n"
-            "  -H  delete messages older than this many days, 0 = keep forever (default 0)\n",
+            "  -H  delete messages older than this many days, 0 = keep forever (default 0)\n"
+            "  -r  frames per second a client may send, 0 = no limit (default %d, bursts of %dx)\n",
             prog, SERVER_DEFAULT_PORT, SERVER_DEFAULT_WS_PORT, USERS_MAX, SERVER_DEFAULT_MAX_CLIENTS,
-            IDENTITY_DEFAULT_PATH, SERVER_DEFAULT_IDLE_TIMEOUT_S, SERVER_DEFAULT_HISTORY_DB);
+            IDENTITY_DEFAULT_PATH, SERVER_DEFAULT_IDLE_TIMEOUT_S, SERVER_DEFAULT_HISTORY_DB,
+            SERVER_DEFAULT_RATE, SERVER_BURST_FACTOR);
 }
 
 /* Parses a decimal integer in [min, max]; returns -1 if invalid. */
@@ -862,7 +897,7 @@ int main(int argc, char** argv) {
     int retention_days = 0;
     int opt;
 
-    while ((opt = getopt(argc, argv, "p:w:d:m:k:t:s:H:h")) != -1) {
+    while ((opt = getopt(argc, argv, "p:w:d:m:k:t:s:H:r:h")) != -1) {
         long v;
         switch (opt) {
             case 'p':
@@ -905,6 +940,15 @@ int main(int argc, char** argv) {
                 break;
             case 's':
                 history_db = optarg;
+                break;
+            case 'r':
+                if ((v = parse_int(optarg, 0, 100000)) < 0) {
+                    fprintf(stderr, "invalid rate: %s\n", optarg);
+                    return 1;
+                }
+                rate_per_s = (double)v;
+                burst = rate_per_s * SERVER_BURST_FACTOR;
+                if (burst < SERVER_MIN_BURST) burst = SERVER_MIN_BURST;
                 break;
             case 'H':
                 if ((v = parse_int(optarg, 0, 36500)) < 0) {
@@ -986,6 +1030,10 @@ int main(int argc, char** argv) {
     }
 
     log_info("listening on port %d (max %d clients)", port, max_clients);
+    if (rate_per_s > 0)
+        log_info("rate limit: %.0f frames/s per client, bursts of %.0f", rate_per_s, burst);
+    else
+        log_info("rate limit: off");
     run();
 
     close_all();
