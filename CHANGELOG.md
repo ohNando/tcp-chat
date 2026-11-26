@@ -10,7 +10,18 @@ change between minor versions). Planned work is in
 
 ### Added
 
-- Code of conduct, changelog and monthly Dependabot updates.
+- Persistent room history in SQLite on the server (`-s` database file,
+  `-H` retention in days). Newcomers get the last 50 messages.
+- Loading older messages: scroll up in the web and desktop clients, or use
+  `/history` in the terminal client.
+- Code of conduct, support guide, changelog, monthly Dependabot updates and
+  CodeQL scanning.
+
+### Changed
+
+- Protocol version 2: `CHAT` carries a stable message id. New
+  `HISTORY_REQ` / `HISTORY_END` frames and the `PAGE` flag. Clients of
+  version 0.4 cannot talk to this server.
 
 ## [0.4.0] - 2026-11-26
 

@@ -19,15 +19,14 @@ are a gentle start. See [CONTRIBUTING.md](../CONTRIBUTING.md).
   size, compact mode, emoji picker, unread count and notifications. The
   desktop app matches the web client's fonts, sizes and layout. Screenshots
   and READMEs are up to date.
+- **Persistent history** ([#1](https://github.com/ohNando/tcp-chat/issues/1)):
+  room messages in SQLite with stable ids; older messages load when
+  scrolling up.
 
 ## Ideas, in suggested order
 
 ### Core
 
-1. [ ] [#1](https://github.com/ohNando/tcp-chat/issues/1) **Persistent history:** store messages on disk (SQLite or an
-       append-only log) so they survive a server restart; load older messages
-       when the user scrolls up. Stable message IDs are the base for replies,
-       reactions, edits and search.
 2. [ ] [#2](https://github.com/ohNando/tcp-chat/issues/2) **Rooms / channels:** `#general`, `#games`, …
        - A WhatsApp/Discord-style room panel on the left: last message and
          unread count per room.
