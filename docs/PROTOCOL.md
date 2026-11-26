@@ -111,7 +111,7 @@ server closes the connection after such a record.
 
 | Field | Meaning |
 |---|---|
-| `ver` | frame format version, `1` |
+| `ver` | frame format version, `2` (version 1 had no message ids; frames with another version are refused) |
 | `type` | message type, see below |
 | `flags` | bit field, see below; unknown bits are ignored |
 | `rsv` | must be `0` |
@@ -120,7 +120,8 @@ server closes the connection after such a record.
 
 | Flag | Value | Meaning |
 |---|---|---|
-| `HISTORY` | `0x01` | a `CHAT` replayed from the server's recent history, not a live message |
+| `HISTORY` | `0x01` | a `CHAT` replayed from the server's history, not a live message |
+| `PAGE` | `0x02` | a `CHAT` (or `HISTORY_END`) answering a `HISTORY_REQ`: an older page, to be shown above the messages already on screen |
 
 Decoding is strict: unknown types, a wrong version, a non-zero reserved byte,
 truncated payloads and trailing bytes are all rejected.
@@ -140,6 +141,7 @@ truncated payloads and trailing bytes are all rejected.
 | `TYPING` | `0x07` | `u8 active` (1 = typing, 0 = stopped) |
 | `KEY` | `0x08` | `key[32]`: the user's X25519 public key for private messages |
 | `DM` | `0x09` | `str to` · `nonce[24]` · `u16 len` · `box[len]` |
+| `HISTORY_REQ` | `0x0A` | `u64 before_id` · `u16 limit`: messages older than `before_id` (0 = the newest), at most 100 |
 
 `PING` and `PONG` work in both directions: the receiver of a `PING`
 answers with a `PONG`.
@@ -157,7 +159,7 @@ forever. Clients must answer with `PONG`; any other traffic also counts.
 | Type | Code | Payload |
 |---|---|---|
 | `WELCOME` | `0x81` | `str text` |
-| `CHAT` | `0x82` | `u64 timestamp_ms` · `str name` · `str text` |
+| `CHAT` | `0x82` | `u64 id` · `u64 timestamp_ms` · `str name` · `str text` |
 | `JOIN` | `0x83` | `str name` |
 | `LEAVE` | `0x84` | `str name` |
 | `USERS` | `0x85` | `u16 count` · `count × str name` |
@@ -165,6 +167,23 @@ forever. Clients must answer with `PONG`; any other traffic also counts.
 | `USER_TYPING` | `0x87` | `str name` · `u8 active` |
 | `PEER_KEY` | `0x88` | `str name` · `key[32]` |
 | `DM_RECV` | `0x89` | `u64 timestamp_ms` · `str from` · `str to` · `nonce[24]` · `u16 len` · `box[len]` |
+| `HISTORY_END` | `0x8A` | `u8 more`: ends a batch of history; `more = 1` if even older messages exist |
+
+### History
+
+The server keeps room messages on disk (SQLite) and gives each one a
+stable, increasing `id`. Everybody sees the same id for the same message,
+so clients use it to drop duplicates (for example the history replayed
+after a reconnect). An id of 0 means the server could not store that
+message. Private messages are never stored: the server only relays them.
+
+- **On join**, before `WELCOME`, the server sends the last 50 messages as
+  `CHAT` with `HISTORY`, oldest first, then `HISTORY_END`.
+- **Older pages:** a client asks with `HISTORY_REQ(before_id = the oldest
+  id it has, limit)`. The answer is the page as `CHAT` with
+  `HISTORY | PAGE`, oldest first, then `HISTORY_END` with `PAGE`.
+- `more = 0` in `HISTORY_END` means the client has reached the beginning
+  of the chat.
 
 The server forwards a member's `TYPING` to everybody else as
 `USER_TYPING`. Clients send `active = 1` at most every 2 seconds while the
@@ -191,11 +210,15 @@ hides the indicator if it is not refreshed within 5 seconds.
 client                         server
   ── handshake ──────────────────
   NAME "ali"          ─────▶
+                      ◀─────   CHAT … (HISTORY, the last 50 messages)
+                      ◀─────   HISTORY_END (more = 1)
                       ◀─────   WELCOME "Welcome, ali! 2 user(s) online."
                       ◀─────   USERS ["ali", "veli"]
                                JOIN "ali"   ─────▶ other members
   MSG "selam"         ─────▶
-                      ◀─────   CHAT (ts, "ali", "selam")  ─────▶ everyone
+                      ◀─────   CHAT (id, ts, "ali", "selam")  ─────▶ everyone
+  HISTORY_REQ (id, 50) ─────▶
+                      ◀─────   CHAT … (HISTORY | PAGE), HISTORY_END (PAGE, more)
   QUIT (TAG_FINAL)    ─────▶
                                LEAVE "ali"  ─────▶ other members
 ```
