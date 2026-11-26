@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useLayoutEffect, useRef, useState } from 'react'
 
 import { Status, useChat } from './hooks/useChat'
 import { useSettings } from './theme/useSettings'
@@ -160,10 +160,55 @@ function ChatBackground({ look }) {
   )
 }
 
-function MessageList({ messages, endRef }) {
+// Messages scroll; older pages are loaded when the user nears the top.
+function MessageList({ messages, hasOlder, loadingOlder, onLoadOlder }) {
+  const box = useRef(null)
+  const atBottom = useRef(true)
+  const firstId = useRef(null)
+  const lastId = useRef(null)
+  const anchor = useRef(null) // distance from the bottom when an older page was asked for
+
+  const loadOlder = () => {
+    const el = box.current
+    if (!el || !onLoadOlder()) return
+    anchor.current = el.scrollHeight - el.scrollTop
+  }
+
+  const onScroll = () => {
+    const el = box.current
+    atBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40
+    if (el.scrollTop < 80 && hasOlder && !loadingOlder) loadOlder()
+  }
+
+  useLayoutEffect(() => {
+    const el = box.current
+    if (!el) return
+    const first = messages[0]?.id ?? null
+    const last = messages.at(-1)
+    if (anchor.current !== null && first !== firstId.current) {
+      // An older page went in above: keep the same messages in view.
+      el.scrollTop = el.scrollHeight - anchor.current
+      anchor.current = null
+    } else if (last && last.id !== lastId.current && (atBottom.current || last.own)) {
+      // Follow new messages, unless the user scrolled up to read.
+      el.scrollTo({ top: el.scrollHeight, behavior: lastId.current === null ? 'auto' : 'smooth' })
+    }
+    firstId.current = first
+    lastId.current = last?.id ?? null
+  }, [messages])
+
   const items = groupMessages(messages)
   return (
-    <div className="messages-box">
+    <div className="messages-box" ref={box} onScroll={onScroll}>
+      {hasOlder ? (
+        <div className="history-top">
+          <button type="button" className="link" disabled={loadingOlder} onClick={loadOlder}>
+            {loadingOlder ? 'Loading…' : 'Load earlier messages'}
+          </button>
+        </div>
+      ) : hasOlder === false && (
+        <div className="history-top"><span>This is the beginning of the chat</span></div>
+      )}
       {items.map((it) => {
         if (it.type === 'date') return <div key={it.key} className="day-separator"><span>{it.label}</span></div>
         if (it.type === 'line')
@@ -174,7 +219,6 @@ function MessageList({ messages, endRef }) {
           )
         return <Bubble key={it.m.id} item={it} />
       })}
-      <div ref={endRef} />
     </div>
   )
 }
@@ -187,18 +231,14 @@ function typingText(names) {
 }
 
 function ChatScreen({ status, me, messages, users, typing, keyedPeers, error, reconnectIn,
-                      onSend, onSendDm, safetyWith, onTyping, onDismissError, onOpenSettings, look }) {
+                      onSend, onSendDm, safetyWith, onTyping, onDismissError, onOpenSettings, look,
+                      history }) {
   const [input, setInput] = useState('')
   const [dmTarget, setDmTarget] = useState(null)
   const [emojiOpen, setEmojiOpen] = useState(false)
-  const endRef = useRef(null)
   const inputRef = useRef(null)
   // The person may have left (or lost their key) since we picked them.
   const target = dmTarget && keyedPeers.includes(dmTarget) ? dmTarget : null
-
-  useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages])
 
   const submit = (e) => {
     e.preventDefault()
@@ -251,7 +291,8 @@ function ChatScreen({ status, me, messages, users, typing, keyedPeers, error, re
 
         <div className={`chat-area${look.settings.wallpaper !== 'none' ? ' has-wallpaper' : ''}`}>
           <ChatBackground look={look} />
-          <MessageList messages={messages} endRef={endRef} />
+          <MessageList messages={messages} hasOlder={history.hasOlder}
+                       loadingOlder={history.loadingOlder} onLoadOlder={history.loadOlder} />
           <div className="typing" aria-live="polite">{typingText(typing)}</div>
         </div>
 
@@ -315,7 +356,9 @@ export default function App() {
                     typing={chat.typing} keyedPeers={chat.keyedPeers} error={chat.error}
                     reconnectIn={chat.reconnectIn} onSend={chat.sendText} onSendDm={chat.sendDm}
                     safetyWith={chat.safetyWith} onTyping={chat.notifyTyping}
-                    onDismissError={chat.clearError} onOpenSettings={openSettings} look={look} />
+                    onDismissError={chat.clearError} onOpenSettings={openSettings} look={look}
+                    history={{ hasOlder: chat.hasOlder, loadingOlder: chat.loadingOlder,
+                               loadOlder: chat.loadOlder }} />
       ) : (
         <LoginScreen status={chat.status} error={chat.error}
                      onLogin={chat.login} onOpenSettings={openSettings} />

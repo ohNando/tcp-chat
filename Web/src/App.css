@@ -295,6 +295,34 @@ input[type='text']:focus {
   margin: 4px 0;
 }
 
+/* Top of the list: load older messages, or where the chat begins. */
+.history-top {
+  display: flex;
+  justify-content: center;
+  margin: 2px 0 6px;
+}
+
+.history-top span {
+  padding: 3px 12px;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+.history-top button.link {
+  padding: 4px 10px;
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--accent);
+  background: var(--panel);
+  border-radius: 999px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+}
+
+.history-top button.link:disabled {
+  color: var(--muted);
+}
+
 .system-line.error-line span {
   color: var(--danger);
 }
