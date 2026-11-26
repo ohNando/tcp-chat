@@ -91,6 +91,31 @@ int main(int argc, char** argv) {
     };
     REQUIRE(pump_until(partner, [&] { c.poll(); return has_dm(partner, false); }), "the recipient decrypts the DM");
     REQUIRE(pump_until(c, [&] { partner.poll(); return has_dm(c, true); }), "the sender decrypts its own echo");
+
+    // History: someone joining later gets the last 50 messages and can load
+    // the older ones page by page.
+    for (int i = 1; i <= 60; i++) partner.sendText("bulk " + std::to_string(i));
+    REQUIRE(pump_until(c, [&] {
+        partner.poll();
+        return !c.lines().empty() && c.lines().back().text == "bulk 60";
+    }), "sixty more messages arrive");
+    auto chats = [](ChatClient& who) {
+        int n = 0;
+        for (auto& l : who.lines()) n += l.kind == ChatLine::Chat;
+        return n;
+    };
+    ChatClient reader;
+    reader.connect(host, port, "reader");
+    REQUIRE(pump_until(reader, [&] { return reader.state() == ConnState::Chatting && reader.hasOlder() == 1; }),
+            "a newcomer is told that older messages exist");
+    REQUIRE(chats(reader) == 50, "and receives the last 50");
+    REQUIRE(reader.loadOlder(), "asks for the page before them");
+    REQUIRE(pump_until(reader, [&] { return !reader.loadingOlder() && reader.prependVersion() == 1; }),
+            "the older page arrives");
+    REQUIRE(chats(reader) == 61 && reader.lines().front().text == "merhaba from the desktop app",
+            "it goes above the others, oldest first");
+    REQUIRE(reader.hasOlder() == 0, "and that was the beginning of the chat");
+    reader.quit();
     partner.quit();
 
     c.quit();
